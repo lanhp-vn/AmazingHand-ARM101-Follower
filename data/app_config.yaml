@@ -36,3 +36,18 @@ safety:
   voltage_warn_pct: 5.0
   voltage_critical_pct: 10.0
   auto_disable_torque_on_critical_temp: true
+
+  # Safe-park before disabling torque (spec §7.5).
+  # Soft E-STOP (Esc), critical temp, and graceful exit all route through this
+  # path: command the named park pose at a gentle velocity, wait for arrival
+  # (or timeout), then disable torque. Avoids the wrist + AmazingHand dropping
+  # under gravity from an extended pose. Hard E-STOP (Shift+Esc) bypasses
+  # this and goes straight to disable_torque_all().
+  safe_park:
+    enabled: true
+    arm_pose: rest                  # name from data/arm_config.yaml (quick_poses or poses)
+    hand_pose: middle               # name from data/hand_config.yaml poses
+    park_velocity_arm: 600          # STS3215 Profile_Velocity register units (gentler than runtime default)
+    park_velocity_hand: 2           # 1..5 hand speed scale; 2 is gentle but still moves promptly
+    park_timeout_s: 4.0             # max wall-clock for the park motion before forcing torque-off
+    arrival_tolerance_deg: 2.0      # all motors within this of target counts as "parked"
