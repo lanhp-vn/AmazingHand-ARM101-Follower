@@ -1,0 +1,38 @@
+schema_version: 1
+
+# Hand bus settings. Default port matches the host's enumerated CH343 bridge for
+# the AmazingHand (5 V SCS0009 bus). Update on first run if your host differs.
+hand:
+  port: COM18
+  baudrate: 1000000
+  timeout: 0.5
+  default_speed: 3                  # 1..5 manual scale; rustypot accepts 1..7 internally
+
+# Arm bus settings. Default port matches the host's Waveshare bus adapter for
+# the SO-ARM101 (12 V STS3215 bus). Update on first run if your host differs.
+arm:
+  port: COM20
+  baudrate: 1000000
+  velocity_profile_default: 1500    # STS3215 register units (Profile_Velocity); tune at first run
+
+# Window / UI persistence. Saved on graceful exit only.
+window:
+  width: 1280
+  height: 800
+  active_tab: hand                  # "hand" | "arm"
+  log_panel_visible: false
+
+# Safety poller + thresholds.
+# Temperature is the servo's internal coil temp (read_present_temperature),
+# not ambient. Manufacturer overload-trip is ~70 °C for both SCS0009 and
+# STS3215; critical=65 leaves a 5 °C safety margin.
+# Voltage thresholds are percent-deviation from each bus's nominal (5 V hand,
+# 12 V arm), matching IL-1.
+safety:
+  poll_rate_hz: 1.0
+  poller_enabled: true
+  temp_warn_c: 50
+  temp_critical_c: 65
+  voltage_warn_pct: 5.0
+  voltage_critical_pct: 10.0
+  auto_disable_torque_on_critical_temp: true

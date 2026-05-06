@@ -1,0 +1,27 @@
+schema_version: 1
+
+# Hand poses and sequences for the unified GUI (arm101-gui).
+#
+# Position units: DEGREES RELATIVE TO EACH SERVO'S CALIBRATED MIDDLE
+# (calibration-aware / Option B in docs/plans/01-unified-gui-spec.md §5.5).
+# The GUI adds the per-servo middle_pos (from
+# scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml) before
+# sending to rustypot.
+#
+# Even-ID values are pre-inverted in this list (matches AmazingHandControl's
+# convention so visually-symmetric poses look symmetric in the YAML).
+# Servo order in the positions array: [s1, s2, s3, s4, s5, s6, s7, s8]
+# i.e.            (Index pair)        (Middle pair)  (Ring pair)   (Thumb pair)
+#
+# Note on naming: the GUI labels finger 1=Ring, 2=Middle, 3=Pointer, 4=Thumb,
+# but the schema-level finger label for the (1,2) servo pair stays "index"
+# per IL-3 (canonical motor ID assignment). "Pointer" is a UI string only.
+
+poses:
+  # Seed pose: all servos at their calibrated middle. Should look like a
+  # natural neutral / open palm post-calibration.
+  middle:
+    positions: [0, 0, 0, 0, 0, 0, 0, 0]
+
+# No sequences seeded — author them in the GUI's pose manager.
+sequences: {}

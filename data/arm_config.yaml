@@ -1,0 +1,44 @@
+schema_version: 1
+
+# Arm poses for the unified GUI (arm101-gui).
+#
+# Joint values are DEGREES (lerobot use_degrees=True mode). The GUI clamps
+# every value to range_min_deg..range_max_deg from
+# scripts/calibration/so_arm101/so101_follower.json before sending — values
+# outside that range are flagged in the activity log and skipped.
+#
+# IMPORTANT — placeholder values:
+# The quick_poses values below are SAFE-LOOKING DEFAULTS, not measured.
+# After first connect, jog the arm to each target pose and click "Save current
+# as zero/home/rest" to overwrite these with values verified against the live
+# calibrated range. The GUI logs a warning at startup if any quick_pose value
+# is out-of-range for the current calibration JSON.
+
+quick_poses:
+  # Electrical zero on every joint. Usually a "stick straight up" pose; verify
+  # against your specific calibration before relying on it.
+  zero:
+    shoulder_pan: 0
+    shoulder_lift: 0
+    elbow_flex: 0
+    wrist_flex: 0
+    wrist_roll: 0
+
+  # Mid-range "ready" pose — elbow folded, shoulder slightly back.
+  home:
+    shoulder_pan: 0
+    shoulder_lift: -45
+    elbow_flex: 90
+    wrist_flex: 0
+    wrist_roll: 0
+
+  # Storage / rest pose — arm folded against the base.
+  rest:
+    shoulder_pan: 0
+    shoulder_lift: -90
+    elbow_flex: 0
+    wrist_flex: 0
+    wrist_roll: 0
+
+# User-saved free-form poses populated via the GUI.
+poses: {}

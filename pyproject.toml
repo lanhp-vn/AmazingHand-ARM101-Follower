@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=2.0,<2.3",
     "pyyaml>=6.0",
     "pydantic>=2.0",
+    "PySide6>=6.6,<6.9",
 ]
 
 [project.optional-dependencies]
@@ -16,6 +17,7 @@ dev = ["ruff>=0.8", "mypy>=1.10", "pytest>=8.0"]
 
 [project.scripts]
 arm101-calibrate-follower = "arm101_hand.scripts.calibrate_follower:main"
+arm101-gui = "arm101_hand.scripts.unified_gui:main"
 
 [tool.uv.sources]
 lerobot = { path = "references/lerobot", editable = true }
