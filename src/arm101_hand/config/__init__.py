@@ -8,7 +8,7 @@
 
 from .app_config import AppConfig, load_app_config
 from .arm_poses import ARM_MOTORS, ArmPose, ArmPoseConfig, load_arm_poses
-from .calibration import FINGER_NAMES, HandCalibration, load_hand_calibration
+from .calibration import FINGER_NAMES, DofLimits, HandCalibration, load_hand_calibration
 from .hand_poses import POSITIONS_LEN, HandPose, HandPoseConfig, HandSequence, load_hand_poses
 
 __all__ = [
@@ -16,6 +16,7 @@ __all__ = [
     "FINGER_NAMES",
     "POSITIONS_LEN",
     "AppConfig",
+    "DofLimits",
     "ArmPose",
     "ArmPoseConfig",
     "HandCalibration",
