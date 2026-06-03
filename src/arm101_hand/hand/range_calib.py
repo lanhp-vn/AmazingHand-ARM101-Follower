@@ -31,9 +31,14 @@ JOG_BASE_MAX = 130
 JOG_SIDE_MIN = -60
 JOG_SIDE_MAX = 60
 
-# present_load magnitude above which we warn (units: SCS0009 load register,
-# same scale read in HandController.poll_state). Tune on the bench.
-LOAD_WARN_THRESHOLD = 60
+# present_load magnitude above which we warn. The SCS0009 "Present Load"
+# register (addr 60) is NOT torque/current: rustypot returns a signed magnitude
+# in raw counts where the 0..1000 field is the motor's PWM/voltage duty in tenths
+# of a percent (1000 = 100.0%). This threshold (~8% drive duty) was set from
+# bench observation of the AmazingHand's small SCS0009s. Feetech documents no
+# numeric stall value, so confirm on the bench (compare the load=[..] line during
+# free jog vs. pushed into a stop) and adjust.
+LOAD_WARN_THRESHOLD = 80
 
 # Raw-key → action. Arrow names are produced by the msvcrt shell in Task 5.
 _KEY_ACTIONS: dict[str, str] = {

@@ -10,13 +10,12 @@ Calibration procedure for the 4-finger AmazingHand using the scripts in `scripts
 - Each finger is a **parallel mechanism**: the two servos combine to produce flexion/extension + abduction/adduction. They must be driven as a pair.
 - All calibration state lives in a single YAML file — `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml` — that every script reads from and writes to.
 - Servo-ID convention (right hand, viewing from the palm side as in PDF page 21): **odd ID on the right servo, even ID on the left servo**.
-
   | Finger | Right servo (odd) | Left servo (even) |
-  | --- | --- | --- |
-  | Index  | 1 | 2 |
-  | Middle | 3 | 4 |
-  | Ring   | 5 | 6 |
-  | Thumb  | 7 | 8 |
+  | ------ | ----------------- | ----------------- |
+  | Index  | 1                 | 2                 |
+  | Middle | 3                 | 4                 |
+  | Ring   | 5                 | 6                 |
+  | Thumb  | 7                 | 8                 |
 
 ---
 
@@ -130,45 +129,151 @@ Horn splines have discrete teeth (~15° each), so even a well-installed horn has
 Each finger's reachable envelope (how far it flexes/extends and how far it
 spreads) is measured here and stored as logical-frame `base`/`side` min/max in
 `AmazingHand_calib_values.yaml`. This is the hand's analog of the SO-ARM101
-follower's `range_min`/`range_max` sweep. Torque stays ON throughout; you jog
-the finger with the arrow keys and mark each limit.
+follower's `range_min`/`range_max` sweep. Torque stays **ON** the whole time; you
+jog the finger to each mechanical stop with the arrow keys and mark the limit
+there. The numbers in the YAML before you run are placeholder seeds — Step 4 is
+where they become real.
 
-> **Windows-only.** Uses `msvcrt` for raw arrow-key reads.
+> **Windows-only.** Uses `msvcrt` for raw arrow-key reads, so it must be run in
+> a real Windows console (PowerShell / cmd), **not** Git Bash, WSL, or an IDE
+> "run" pane that doesn't forward raw keystrokes.
 
-1. Close any other COM-port holder (IL-4). Run:
-   `uv run python scripts/calibration/AmazingHand/AmazingHand_RangeCalib.py`
-2. Pick a finger. It holds at calibrated middle `(base=0, side=0)`.
-3. Jog to each extreme and mark it:
+#### 4.1 What the two DOF mean (sign convention)
 
-   | Key | Action |
-   | --- | --- |
-   | ↑ / ↓ | flex toward close / extend toward open (`base` ±) |
-   | → / ← | spread (`side` ±) |
-   | `[` / `]` | shrink / grow the jog step (default 5°) |
-   | `1` `2` `3` `4` | mark `base_min` / `base_max` / `side_min` / `side_max` |
-   | `h` | home to `(0, 0)` |
-   | `s` | save this finger's limits |
-   | `q` / Ctrl+C | save and exit (torque off) |
+`base` and `side` are the finger's **logical** degrees of freedom, measured in
+degrees relative to the calibrated middle (`0, 0`) you dialed in at Step 3:
 
-4. **Mark just *before* the mechanical stop, not at it.** A `WARNING: high load`
-   line means you've pushed into the stop — back off one step and mark there.
-5. Repeat for all four fingers.
+- **`base`** — flexion. **Positive = closing/curling in**, negative = extending
+  open. The `↑` key increases `base` (closes), `↓` decreases it (opens).
+- **`side`** — abduction/spread. `→` increases `side`, `←` decreases it.
+
+So the four stored limits map to four physical extremes:
+
+| Limit      | Reached by jogging…                  | Mark key |
+| ---------- | -------------------------------------- | -------- |
+| `base_max` | `↑` until the finger is fully closed | `2`    |
+| `base_min` | `↓` until the finger is fully open   | `1`    |
+| `side_max` | `→` to the spread stop               | `4`    |
+| `side_min` | `←` to the opposite spread stop      | `3`    |
+
+#### 4.2 Before you start
+
+- Steps 1–3 are complete for this finger (IDs burned, horns on, middle dialed
+  in). Step 4 reads each finger's `middle_pos` and jogs relative to it — a bad
+  middle makes the measured limits meaningless.
+- Close any other COM-port holder — FD.exe, serial monitors, a stale Python
+  session, the GUI (IL-4). Only one process may own the bus.
+- 5 V PSU on; bus wired; correct `com_port` in the YAML.
+
+#### 4.3 Run it
+
+```powershell
+uv run python scripts/calibration/AmazingHand/AmazingHand_RangeCalib.py
+```
+
+1. At `Which finger to range-calibrate? (index/middle/ring/thumb):`, type a
+   finger name and press Enter. The script enables torque on that finger's two
+   servos and drives it to calibrated middle `(base=0, side=0)`. It prints the
+   current stored limits so you can see what you're about to overwrite.
+2. The full control map is printed at startup. The keys:
+
+   | Key                     | Action                                                         |
+   | ----------------------- | -------------------------------------------------------------- |
+   | `↑` / `↓`           | `base +` / `base −` — flex toward close / extend toward open |
+   | `→` / `←`           | `side +` / `side −` — spread each way                       |
+   | `[` / `]`           | shrink / grow the jog step (starts 5°, clamped 1–15°)        |
+   | `1` `2` `3` `4` | mark `base_min` / `base_max` / `side_min` / `side_max` at the cursor |
+   | `h`                   | home — snap the cursor back to `(0, 0)`                       |
+   | `s`                   | save this finger's limits to the YAML now                      |
+   | `q` / Ctrl+C          | save (if valid) and exit; torque off                           |
+
+3. After every key the script prints a live status line:
+
+   ```
+   base=  35  side=   0  step= 5  load=[12,9]
+   ```
+
+   `base`/`side` are the cursor in degrees, `step` is the current jog increment,
+   and `load=[L1,L2]` is each servo's present load. Watch `load` as you approach
+   a stop.
+
+4. **Marking a limit captures the cursor's current value — it does not move the
+   finger.** So the workflow for each extreme is: *jog there, confirm it's at the
+   stop, then press the mark key.* A recommended order for one finger:
+   1. `↑ … ↑` to the closed stop → press `2` (`base_max`).
+   2. `h` to re-home, then `↓ … ↓` to the open stop → press `1` (`base_min`).
+   3. `h`, then `→ … →` to one spread stop → press `4` (`side_max`).
+   4. `h`, then `← … ←` to the other spread stop → press `3` (`side_min`).
+
+   Use `[` / `]` to drop to a 1–2° step for fine approach near a stop, and a
+   bigger step to cross the open middle quickly.
+
+5. **Mark just *before* the mechanical stop, not into it.** When you push into a
+   hard stop the servos stall and you'll see:
+
+   ```
+   WARNING: high load on servo(s) [1] — back off one step and mark there
+   ```
+
+   That means back off one jog step (e.g. `↓` if you were closing) and mark at
+   *that* cursor instead. Marking against the stop bakes a stalling endpoint into
+   every future pose.
+
+6. Press `s` to save at any point, or just `q` / Ctrl+C — the script saves on
+   exit too. Saving writes **only the active finger's** `limits` block; the rest
+   of the YAML (other fingers, serial settings) is preserved untouched.
+
+7. **The ordering guard.** A limit set is only saved if
+   `base_min < base_max` **and** `side_min < side_max`. If you've marked them out
+   of order (e.g. marked `base_max` while the cursor was on the open side), the
+   script refuses and tells you which pair is wrong:
+
+   ```
+   NOT saved -- invalid limits: base_min (40) >= base_max (10)
+   ```
+
+   on `s`, or on exit:
+
+   ```
+   NOT saving -- invalid limits: … . Re-run and mark valid endpoints.
+   ```
+
+   The YAML is left unchanged in that case — re-run and re-mark. (Because the run
+   starts from the *stored* limits, any extreme you never marked keeps its prior
+   value, so you can also fix just one bad limit by re-running and re-marking only
+   that one.)
+
+8. Repeat 4.3 for all four fingers. Each run handles exactly one finger.
+
+#### 4.4 Verify
+
+Open `AmazingHand_calib_values.yaml` and confirm each finger's `limits` block now
+holds your measured numbers (no longer the `-30 / 110 / -40 / 40` seeds), and
+that within each block `base_min < base_max` and `side_min < side_max`. These
+limits are what the audit scripts (Step 5/6) and `hand.kinematics` clamp against.
 
 ### Step 5 — Audit with FingerTest
 
 **Script:** `scripts/calibration/AmazingHand/AmazingHand_FingerTest.py`
 
-Sanity check the saved values against the real mechanism.
+Sanity check the saved values against the real mechanism. The finger is walked
+through its full calibrated envelope on **both** degrees of freedom: flexion
+(`base_max`↔`base_min` at neutral spread), then abduction (`side_max`↔`side_min`
+at neutral flexion), returning through neutral between phases.
 
 1. Run (`uv run python scripts/calibration/AmazingHand/AmazingHand_FingerTest.py`), enter a finger.
-2. The finger cycles Close↔Open indefinitely using the stored `middle_pos` values.
+2. The finger cycles indefinitely, driving to each calibrated limit in turn. Each
+   pose it moves to is printed (e.g. `-> close (full flexion) (base=110, side=0)`).
 3. Watch for:
-   - Clean closed pose — horns aligned with their servos' middle plane.
-   - Clean open pose — finger returns to a neutral spread.
-   - No buzz, whine, or heat at either endpoint.
+   - Clean flexion endpoints — full close with horns aligned to their servos'
+     middle plane, full open returning to neutral.
+   - Symmetric abduction — the spread reaches comparable extents either way and
+     returns cleanly to center.
+   - No buzz, whine, or heat at any endpoint.
 4. Ctrl+C to stop; re-run for the next finger.
 
-If anything looks off, revisit Step 3 for that finger.
+If a flexion endpoint looks off, revisit Step 3 (middle position). If a limit is
+reached early/late or buzzes, revisit Step 4 (range) for that finger.
 
 ### Step 6 — Full-hand demo
 
@@ -179,6 +284,21 @@ This script provides a combined "fist → open hand → per-finger isolation" de
 1. Run the script (`uv run python scripts/calibration/AmazingHand/AmazingHand_FullHand_Test.py`).
 2. The hand will cycle through closing all fingers, opening all fingers, and then exercising each finger independently.
 3. This is the end-to-end sanity check that proves the calibration matches the real mechanism across all fingers.
+
+### Utility — park the hand open or closed
+
+**Script:** `scripts/calibration/AmazingHand/AmazingHand_SetPose.py`
+
+Not a calibration step — a convenience for driving the whole hand to one static
+pose and holding it. Every finger goes to `base_min` (open) or `base_max`
+(close) at neutral spread, taken from the calibrated `limits`. The hand is held
+under torque until you press Enter, then torque releases.
+
+```powershell
+uv run python scripts/calibration/AmazingHand/AmazingHand_SetPose.py open
+uv run python scripts/calibration/AmazingHand/AmazingHand_SetPose.py close
+uv run python scripts/calibration/AmazingHand/AmazingHand_SetPose.py        # prompts open/close
+```
 
 ---
 
@@ -222,16 +342,16 @@ Editing the YAML by hand is fine — the scripts preserve any top-level keys you
 
 ## 5. Troubleshooting
 
-| Symptom | Likely cause | Fix |
-| --- | --- | --- |
-| `ModuleNotFoundError: No module named 'yaml'` | Running with the system Python instead of `.venv/` | Use `uv run python …` (not bare `python …`); re-run `uv sync` if `.venv` is stale |
-| `pip install yaml` fails with "no matching distribution" | Wrong package name | The import is `yaml` but the package is `pyyaml` |
-| Only one servo of a pair responds | Duplicate ID on the bus | Wire each servo alone and re-burn via Step 1 |
-| Close/Open motion looks inverted on one finger | Odd/even swap on that pair | Recheck Step 1 — odd ID on the right servo, even on the left |
-| Horn sits badly at closed pose no matter what offset you enter | Horn on wrong spline tooth | Repeat Step 2 for that finger and bump the horn by one tooth |
-| Servo buzzes/whines near an endpoint | Commanded past the mechanical stop | Reduce the offending `middle_pos` by 1–2° in Step 3 |
-| COM port fails to open | Another program holds the port, or the bridge enumerated on a different COM | Close serial monitors / other Python sessions; update `com_port` in the YAML |
-| Final offset needs to exceed ±20° | Horn on wrong tooth, or IDs swapped | Don't absorb it in software — fix the mechanical/ID issue |
+| Symptom                                                        | Likely cause                                                                | Fix                                                                                         |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `ModuleNotFoundError: No module named 'yaml'`                | Running with the system Python instead of `.venv/`                        | Use `uv run python …` (not bare `python …`); re-run `uv sync` if `.venv` is stale |
+| `pip install yaml` fails with "no matching distribution"     | Wrong package name                                                          | The import is `yaml` but the package is `pyyaml`                                        |
+| Only one servo of a pair responds                              | Duplicate ID on the bus                                                     | Wire each servo alone and re-burn via Step 1                                                |
+| Close/Open motion looks inverted on one finger                 | Odd/even swap on that pair                                                  | Recheck Step 1 — odd ID on the right servo, even on the left                               |
+| Horn sits badly at closed pose no matter what offset you enter | Horn on wrong spline tooth                                                  | Repeat Step 2 for that finger and bump the horn by one tooth                                |
+| Servo buzzes/whines near an endpoint                           | Commanded past the mechanical stop                                          | Reduce the offending `middle_pos` by 1–2° in Step 3                                     |
+| COM port fails to open                                         | Another program holds the port, or the bridge enumerated on a different COM | Close serial monitors / other Python sessions; update `com_port` in the YAML              |
+| Final offset needs to exceed ±20°                            | Horn on wrong tooth, or IDs swapped                                         | Don't absorb it in software — fix the mechanical/ID issue                                  |
 
 ---
 

@@ -2,11 +2,18 @@
 AmazingHand Finger Test Script
 
 This script allows you to audit the calibration of a single finger.
-It prompts you to select a finger (index, middle, ring, or thumb), and then
-continuously cycles that finger between a closed and open pose indefinitely.
-This is used to visually verify that the neutral positions and ranges of motion
-are correct without making any changes to the calibration values.
-Press Ctrl+C to stop the cycle.
+It prompts you to select a finger (index, middle, ring, or thumb), then
+continuously walks that finger through its full calibrated envelope on BOTH
+degrees of freedom:
+
+  * flexion / extension (the ``base`` axis): full close <-> full open, and
+  * abduction / adduction (the ``side`` axis): spread one way <-> the other,
+
+returning through neutral between phases. Every endpoint is taken straight from
+the per-finger ``limits`` in ``AmazingHand_calib_values.yaml`` (measured at
+Step 4 with ``AmazingHand_RangeCalib.py``). It makes no changes to the
+calibration values -- it only drives the finger so you can watch for clean
+endpoints, no buzz, and a symmetric spread. Press Ctrl+C to stop.
 """
 import time
 from pathlib import Path
@@ -39,14 +46,20 @@ def _send_pose(c, id1, id2, mp1, mp2, base, side, speed):
     time.sleep(0.01)
 
 
-def close_finger(c, id1, id2, mp1, mp2, limits, speed):
-    # Full flexion at neutral spread.
-    _send_pose(c, id1, id2, mp1, mp2, limits["base_max"], 0, speed)
+def build_sequence(limits):
+    """Ordered (label, base, side, dwell_s) poses covering both DOF.
 
-
-def open_finger(c, id1, id2, mp1, mp2, limits, speed):
-    # Full extension at neutral spread.
-    _send_pose(c, id1, id2, mp1, mp2, limits["base_min"], 0, speed)
+    Flexion is tested first at neutral spread, then abduction is tested at
+    neutral flexion, with a brief return to neutral between the two phases.
+    """
+    return [
+        ("close  (full flexion)", limits["base_max"], 0, 3.0),
+        ("open   (full extension)", limits["base_min"], 0, 2.0),
+        ("neutral", 0, 0, 1.0),
+        ("abduct (spread +)", 0, limits["side_max"], 2.0),
+        ("adduct (spread -)", 0, limits["side_min"], 2.0),
+        ("neutral", 0, 0, 1.0),
+    ]
 
 
 def main():
@@ -62,6 +75,8 @@ def main():
     limits = block["limits"]
     speed = config["speed"]
 
+    sequence = build_sequence(limits)
+
     c = Scs0009PyController(
         serial_port=config["com_port"],
         baudrate=config["baudrate"],
@@ -71,14 +86,14 @@ def main():
     c.write_torque_enable(id2, 1)
 
     print(f"[finger={finger}, ID_1={id1}, ID_2={id2}] limits={limits}")
-    print("cycling Close <-> Open (from calibrated limits) -- Ctrl+C to stop")
+    print("cycling flexion + abduction (from calibrated limits) -- Ctrl+C to stop")
 
     try:
         while True:
-            close_finger(c, id1, id2, mp1, mp2, limits, speed)
-            time.sleep(3)
-            open_finger(c, id1, id2, mp1, mp2, limits, speed)
-            time.sleep(1)
+            for label, base, side, dwell in sequence:
+                print(f"  -> {label}  (base={base}, side={side})")
+                _send_pose(c, id1, id2, mp1, mp2, base, side, speed)
+                time.sleep(dwell)
     except KeyboardInterrupt:
         print("\n^C -- stopping")
     finally:

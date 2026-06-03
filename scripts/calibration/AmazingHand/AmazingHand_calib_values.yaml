@@ -7,16 +7,16 @@ fingers:
   index:
     servo_1: {id: 1, middle_pos: 30}
     servo_2: {id: 2, middle_pos: -2}
-    limits: {base_min: -30, base_max: 110, side_min: -40, side_max: 40}
+    limits: {base_min: -20, base_max: 70, side_min: -40, side_max: 35}
   middle:
     servo_1: {id: 3, middle_pos: -32}
     servo_2: {id: 4, middle_pos: 20}
-    limits: {base_min: -30, base_max: 110, side_min: -40, side_max: 40}
+    limits: {base_min: -35, base_max: 65, side_min: -20, side_max: 15}
   ring:
     servo_1: {id: 5, middle_pos: 22}
     servo_2: {id: 6, middle_pos: 0}
-    limits: {base_min: -30, base_max: 110, side_min: -40, side_max: 40}
+    limits: {base_min: -35, base_max: 65, side_min: -25, side_max: 20}
   thumb:
     servo_1: {id: 7, middle_pos: 0}
     servo_2: {id: 8, middle_pos: -12}
-    limits: {base_min: -30, base_max: 110, side_min: -40, side_max: 40}
+    limits: {base_min: -40, base_max: 100, side_min: -55, side_max: 50}
