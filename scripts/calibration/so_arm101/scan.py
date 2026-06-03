@@ -32,7 +32,11 @@ def main() -> int:
     try:
         # handshake=False: do not require every motor to answer at connect time --
         # we want to report which ones are missing.
-        bus.connect(handshake=False)
+        try:
+            bus.connect(handshake=False)
+        except (ConnectionError, OSError) as e:
+            print(f"ERROR: could not open {cfg.arm.port}: {e}", file=sys.stderr)
+            return 1
 
         header = f"{'joint':<14}{'id':>3}{'model':>7}{'pos_raw':>9}{'load':>7}{'volt':>7}{'temp_c':>8}"
         print(header)
@@ -45,9 +49,9 @@ def main() -> int:
                 print(f"{joint:<14}{motor_id:>3}{'--':>7}{'(no response)':>34}")
                 continue
             pos = bus.read("Present_Position", joint, normalize=False)
-            load = bus.read("Present_Load", joint)
-            volt = bus.read("Present_Voltage", joint)  # 0.1 V units on Feetech (122 = 12.2 V)
-            temp = bus.read("Present_Temperature", joint)
+            load = bus.read("Present_Load", joint, normalize=False)
+            volt = bus.read("Present_Voltage", joint, normalize=False)  # 0.1 V units (122 = 12.2 V)
+            temp = bus.read("Present_Temperature", joint, normalize=False)
             print(f"{joint:<14}{motor_id:>3}{model:>7}{pos:>9}{load:>7}{volt / 10:>6.1f}V{temp:>7}")
             if temp >= cfg.safety.temp_warn_c:
                 print(f"  WARNING: {joint} temp {temp}C >= warn threshold {cfg.safety.temp_warn_c}C")
@@ -55,7 +59,7 @@ def main() -> int:
         # disable_torque=False: we never enabled torque; don't touch it on the way out.
         if bus.is_connected:
             bus.disconnect(disable_torque=False)
-        print(f"Bus closed on {cfg.arm.port}.")
+            print(f"Bus closed on {cfg.arm.port}.")
 
     if missing:
         print(f"\nMISSING motors: {missing}", file=sys.stderr)
