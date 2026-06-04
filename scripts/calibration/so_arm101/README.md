@@ -85,6 +85,7 @@ truth and **never write `so101_follower.json`** (IL-5). All read `arm.port` from
 | `scan.py` | no | off | raw | Ping motors 1–5; report position/load/voltage/temperature. Exit 1 if any motor is missing. |
 | `sweep.py` | yes | on→off | RANGE_M100_100 | Drive a joint (or `all`) to its calibrated endpoints (`±margin`, default 90) and back; verify no buzz/stall. |
 | `set_pose.py` | yes | on→off | DEGREES | Drive to a `quick_poses` pose from `data/arm_config.yaml` (zero/home/rest) and hold until Enter. |
+| `jog.py` | yes | on→off | DEGREES | Keyboard-jog each motor in degrees (clamped to range); `t` hand-pose toggle; `h` home a joint; `s` save current pose to `data/arm_jog_poses.yaml`. Returns home before releasing torque. |
 
 ```powershell
 uv run python scripts/calibration/so_arm101/show_calib.py            # offline dump
@@ -92,6 +93,7 @@ uv run python scripts/calibration/so_arm101/show_calib.py --live     # + live po
 uv run python scripts/calibration/so_arm101/scan.py                  # bus health (pre-flight)
 uv run python scripts/calibration/so_arm101/sweep.py wrist_flex --margin 70
 uv run python scripts/calibration/so_arm101/set_pose.py rest
+uv run python scripts/calibration/so_arm101/jog.py                  # interactive keyboard jog
 ```
 
 **Norm-mode split.** `sweep.py` uses `RANGE_M100_100`, where the calibrated range maps
@@ -113,6 +115,21 @@ the mounted AmazingHand) dropping under gravity when torque cuts from an extende
 mirrors the `safe_park` intent in `data/app_config.yaml` and is implemented once in
 `_common.park_home_and_release`. (`scan.py` and `show_calib.py` are read-only — they never
 enable torque or move, so there is nothing to re-home.)
+
+**Jog controls (`jog.py`).** Torque ON to move; `msvcrt` raw keys:
+
+| Key | Action |
+| --- | --- |
+| `1`–`5` | select joint (shoulder_pan … wrist_roll) |
+| `↑` / `↓` | jog active joint ± step (deg), clamped to calibrated range |
+| `[` / `]` | shrink / grow step (1–15°) |
+| `h` | home active joint to 0 |
+| `t` | toggle torque (off = hand-pose by hand; on = resync + hold) |
+| `s` | save current pose to `data/arm_jog_poses.yaml` (prompts for a name) |
+| `q` / `Ctrl+C` | return home, release torque, exit (if torque off: disconnect in place) |
+
+Saved poses land in `data/arm_jog_poses.yaml` (a separate file from `arm_config.yaml`) and
+are drivable by name with `set_pose.py`, which resolves from both files.
 
 **Recommended order:** `scan` (all 5 respond?) → `show_calib` (numbers sane?) →
 `sweep` per joint (endpoints clean?) → `set_pose home`/`rest` (parks cleanly?).
