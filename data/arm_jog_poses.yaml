@@ -1,8 +1,0 @@
-schema_version: 1
-
-# Poses saved interactively by scripts/calibration/so_arm101/jog.py (press 's' while jogging).
-# Each entry is <name>: {shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll} in
-# DEGREES relative to each joint's calibrated midpoint. Drivable by name with set_pose.py,
-# which merges these with arm_config.yaml quick_poses (a jog pose wins on a name collision).
-# jog.py rewrites this file via save_arm_poses on each save (these comments are regenerated away).
-poses: {}

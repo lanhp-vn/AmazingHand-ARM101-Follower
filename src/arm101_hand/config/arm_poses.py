@@ -1,4 +1,4 @@
-"""Pydantic schema for ``data/arm_config.yaml`` (quick-poses + saved poses).
+"""Pydantic schema for ``data/arm_config.yaml`` (arm poses).
 
 Joint values are degrees, with lerobot's ``use_degrees=True`` mode active. The
 schema accepts any numeric value; runtime clamping against per-motor
@@ -44,7 +44,6 @@ class ArmPoseConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: int = 1
-    quick_poses: dict[str, ArmPose] = Field(default_factory=dict)
     poses: dict[str, ArmPose] = Field(default_factory=dict)
 
 
@@ -54,13 +53,21 @@ def load_arm_poses(path: Path) -> ArmPoseConfig:
     return ArmPoseConfig.model_validate(raw)
 
 
+_SAVE_HEADER = (
+    "# data/arm_config.yaml -- arm poses (degrees per joint; lerobot use_degrees mode).\n"
+    "# MACHINE-MANAGED: rewritten by jog.py ('s' to save) and the GUI; do not hand-edit\n"
+    "# (comments are regenerated on save). 'home' is the default parking / safe-park pose.\n"
+)
+
+
 def save_arm_poses(path: Path, config: ArmPoseConfig) -> None:
     """Write an ``ArmPoseConfig`` to YAML atomically (tmp file + ``os.replace``).
 
-    Used for the jog-pose file (``data/arm_jog_poses.yaml``) -- a fresh, code-owned file,
-    so no comment preservation is needed. ``sort_keys=False`` keeps a stable field order.
+    The file is machine-owned: a fixed header is regenerated each write and any prior
+    comments are discarded. ``sort_keys=False`` keeps a stable field order.
     """
     payload = config.model_dump(mode="python")
+    body = yaml.safe_dump(payload, sort_keys=False)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    tmp.write_text(_SAVE_HEADER + body, encoding="utf-8")
     os.replace(tmp, path)

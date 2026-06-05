@@ -16,8 +16,8 @@ SEEDED_PATH = REPO_ROOT / "data" / "arm_config.yaml"
 def test_seeded_yaml_loads_clean() -> None:
     cfg = load_arm_poses(SEEDED_PATH)
     assert cfg.schema_version == 1, "schema_version of seeded YAML"
-    assert "home" in cfg.quick_poses, "seeded YAML has the home quick-pose"
-    home = cfg.quick_poses["home"]
+    assert "home" in cfg.poses, "seeded YAML has the home pose"
+    home = cfg.poses["home"]
     assert home.shoulder_lift == -104.9, "home folds the shoulder back (folded storage / safe-park target)"
 
 
@@ -68,6 +68,11 @@ def test_pose_extra_field_rejected() -> None:
         ArmPoseConfig.model_validate({"poses": {"p1": full}})
 
 
-def test_empty_quick_poses_and_poses_accepted() -> None:
-    cfg = ArmPoseConfig.model_validate({"schema_version": 1, "quick_poses": {}, "poses": {}})
-    assert cfg.quick_poses == {} and cfg.poses == {}, "both pose dicts may be empty"
+def test_empty_poses_accepted() -> None:
+    cfg = ArmPoseConfig.model_validate({"schema_version": 1, "poses": {}})
+    assert cfg.poses == {}, "poses may be empty"
+
+
+def test_quick_poses_key_now_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ArmPoseConfig.model_validate({"schema_version": 1, "quick_poses": {}, "poses": {}})

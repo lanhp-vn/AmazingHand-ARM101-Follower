@@ -1,32 +1,16 @@
+# data/arm_config.yaml -- arm poses (degrees per joint; lerobot use_degrees mode).
+# MACHINE-MANAGED: rewritten by jog.py ('s' to save) and the GUI; do not hand-edit
+# (comments are regenerated on save). 'home' is the default parking / safe-park pose.
+#
+# Joint values are DEGREES relative to each joint's calibrated midpoint. Readers clamp
+# every value to range_min..range_max from so101_follower.json and skip out-of-range
+# joints. 'home' is the folded-against-base storage pose the motion scripts return to
+# before releasing torque; captured from hardware on 2026-06-03.
 schema_version: 1
-
-# Arm poses for the unified GUI (arm101-gui).
-#
-# Joint values are DEGREES (lerobot use_degrees=True mode). The GUI clamps
-# every value to range_min_deg..range_max_deg from
-# scripts/calibration/so_arm101/so101_follower.json before sending — values
-# outside that range are flagged in the activity log and skipped.
-#
-# IMPORTANT — placeholder values:
-# The quick_poses values below are SAFE-LOOKING DEFAULTS, not measured.
-# After first connect, jog the arm to each target pose and click "Save current
-# as zero/home/rest" to overwrite these with values verified against the live
-# calibrated range. The GUI logs a warning at startup if any quick_pose value
-# is out-of-range for the current calibration JSON.
-
-quick_poses:
-  # Default home / storage pose — the arm folded against the base. This is the
-  # pose the motion scripts (sweep/set_pose/jog) return to before releasing torque
-  # (see _common.park_home_and_release / load_home_degrees). Captured from the arm's
-  # current pose on 2026-06-03 (clamped into the calibrated range), so torque-off
-  # settles it the last 1-3 deg to exactly this rest. Re-capture by posing the arm,
-  # running scan.py, and updating these values.
+poses:
   home:
     shoulder_pan: 80.2
     shoulder_lift: -104.9
     elbow_flex: 91.0
     wrist_flex: -102.9
     wrist_roll: -0.2
-
-# User-saved free-form poses populated via the GUI.
-poses: {}
