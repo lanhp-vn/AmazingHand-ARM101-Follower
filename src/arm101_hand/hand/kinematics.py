@@ -170,6 +170,8 @@ def finger_positions_to_servo_frame(
     applies even-ID pre-inversion. The caller places the results at ``out[odd_id - 1]``
     and ``out[even_id - 1]`` of an 8-long positions array. This is the single source for
     the conversion formula the GUI's ``hand_panel._snapshot_positions`` used to inline.
+
+    Precondition: ``odd_id`` must be an odd IL-3 motor ID and ``even_id`` an even one (1-8); ``even_id_inversion`` keys on parity.
     """
     pos1, pos2 = compose_finger(base, side, servo_min, servo_max)
     return (

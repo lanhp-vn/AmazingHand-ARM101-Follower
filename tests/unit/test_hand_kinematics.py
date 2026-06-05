@@ -13,6 +13,7 @@ from arm101_hand.hand.kinematics import (
     decompose_finger,
     degrees_to_servo_radians,
     even_id_inversion,
+    finger_positions_to_servo_frame,
     servo_radians_to_degrees,
     validate_pose_name,
 )
@@ -215,9 +216,7 @@ def test_clamps_are_opt_in() -> None:
     assert (pos1, pos2) == (-40, 100), "without limits, side is not clamped (legacy behavior)"
 
 
-def test_finger_positions_odd_passthrough_even_negated():
-    from arm101_hand.hand import finger_positions_to_servo_frame
-
+def test_finger_positions_odd_passthrough_even_negated() -> None:
     # Pure flexion (base=30, side=0): pos1=pos2=30.
     # Odd id (1): passthrough -> 30. Even id (2): negated -> -30.
     odd_val, even_val = finger_positions_to_servo_frame(1, 2, 30, 0)
@@ -225,13 +224,7 @@ def test_finger_positions_odd_passthrough_even_negated():
     assert even_val == -30
 
 
-def test_finger_positions_round_trip():
-    from arm101_hand.hand import (
-        decompose_finger,
-        even_id_inversion,
-        finger_positions_to_servo_frame,
-    )
-
+def test_finger_positions_round_trip() -> None:
     base, side = 25, 10
     odd_val, even_val = finger_positions_to_servo_frame(3, 4, base, side)
     # Invert the even-ID pre-inversion to get back logical pos1/pos2, then decompose.
