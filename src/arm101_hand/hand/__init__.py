@@ -7,6 +7,7 @@ from .kinematics import (
     decompose_finger,
     degrees_to_servo_radians,
     even_id_inversion,
+    finger_positions_to_servo_frame,
     servo_radians_to_degrees,
     validate_pose_name,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "decompose_finger",
     "degrees_to_servo_radians",
     "even_id_inversion",
+    "finger_positions_to_servo_frame",
     "servo_radians_to_degrees",
     "validate_pose_name",
     "JogState",

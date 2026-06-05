@@ -156,6 +156,28 @@ def compose_finger(
     return int(pos1), int(pos2)
 
 
+def finger_positions_to_servo_frame(
+    odd_id: int,
+    even_id: int,
+    base: int,
+    side: int,
+    servo_min: int = -40,
+    servo_max: int = 110,
+) -> tuple[int, int]:
+    """``(base, side)`` logical → ``(odd_servo_val, even_servo_val)`` in YAML/servo frame.
+
+    Composes to a symmetric servo pair (clamped to ``[servo_min, servo_max]``), then
+    applies even-ID pre-inversion. The caller places the results at ``out[odd_id - 1]``
+    and ``out[even_id - 1]`` of an 8-long positions array. This is the single source for
+    the conversion formula the GUI's ``hand_panel._snapshot_positions`` used to inline.
+    """
+    pos1, pos2 = compose_finger(base, side, servo_min, servo_max)
+    return (
+        int(even_id_inversion(odd_id, float(pos1))),
+        int(even_id_inversion(even_id, float(pos2))),
+    )
+
+
 def decompose_finger(
     pos1: int,
     pos2: int,
