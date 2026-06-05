@@ -20,9 +20,9 @@ Windows-only: uses ``msvcrt.getwch`` for raw key reads. The pure jog logic is in
 import msvcrt
 from pathlib import Path
 
-import yaml
 from rustypot import Scs0009PyController
 
+from arm101_hand.config import DofLimits, load_hand_calibration, save_hand_calibration
 from arm101_hand.hand import (
     apply_action,
     compose_finger,
@@ -37,35 +37,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 YAML_PATH = SCRIPT_DIR / "AmazingHand_calib_values.yaml"
 
 VALID_FINGERS = ("index", "middle", "ring", "thumb")
-
-
-class InlineDict(dict):
-    pass
-
-
-def _inline_dict_representer(dumper, data):
-    return dumper.represent_mapping("tag:yaml.org,2002:map", data, flow_style=True)
-
-
-yaml.SafeDumper.add_representer(InlineDict, _inline_dict_representer)
-
-
-def load_config(path):
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
-def save_config(path, data):
-    out = {k: v for k, v in data.items() if k != "fingers"}
-    out["fingers"] = {}
-    for finger, block in data["fingers"].items():
-        out["fingers"][finger] = {
-            "servo_1": InlineDict(block["servo_1"]),
-            "servo_2": InlineDict(block["servo_2"]),
-            "limits": InlineDict(block["limits"]),
-        }
-    with open(path, "w") as f:
-        yaml.safe_dump(out, f, sort_keys=False, default_flow_style=False)
 
 
 def limits_error(limits):
@@ -114,20 +85,20 @@ def read_loads(c, id1, id2):
 
 
 def main():
-    config = load_config(YAML_PATH)
+    cfg = load_hand_calibration(YAML_PATH)
     finger = prompt_finger()
-    block = config["fingers"][finger]
-    id1 = block["servo_1"]["id"]
-    id2 = block["servo_2"]["id"]
-    mp1 = block["servo_1"]["middle_pos"]
-    mp2 = block["servo_2"]["middle_pos"]
-    speed = config["speed"]
-    limits = dict(block["limits"])  # start from current stored limits
+    block = cfg.fingers[finger]
+    id1 = block.servo_1.id
+    id2 = block.servo_2.id
+    mp1 = block.servo_1.middle_pos
+    mp2 = block.servo_2.middle_pos
+    speed = cfg.speed
+    limits = block.limits.model_dump()  # working dict; start from current stored limits
 
     c = Scs0009PyController(
-        serial_port=config["com_port"],
-        baudrate=config["baudrate"],
-        timeout=config["timeout"],
+        serial_port=cfg.com_port,
+        baudrate=cfg.baudrate,
+        timeout=cfg.timeout,
     )
     c.write_torque_enable(id1, 1)
     c.write_torque_enable(id2, 1)
@@ -150,8 +121,8 @@ def main():
                 if err:
                     print(f"  NOT saved -- invalid limits: {err}")
                 else:
-                    block["limits"] = InlineDict(limits)
-                    save_config(YAML_PATH, config)
+                    block.limits = DofLimits(**limits)
+                    save_hand_calibration(YAML_PATH, cfg)
                     print(f"  saved limits {limits} for {finger}")
                 continue
 
@@ -175,8 +146,8 @@ def main():
         if err:
             print(f"NOT saving -- invalid limits: {err}. Re-run and mark valid endpoints.")
         else:
-            block["limits"] = InlineDict(limits)
-            save_config(YAML_PATH, config)
+            block.limits = DofLimits(**limits)
+            save_hand_calibration(YAML_PATH, cfg)
             print(f"Saved limits for {finger} to {YAML_PATH}")
         for sid in (id1, id2):
             try:
