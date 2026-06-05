@@ -28,6 +28,7 @@ from rustypot import Scs0009PyController
 
 from arm101_hand.config import (
     HandPose,
+    HandPoseConfig,
     load_hand_calibration,
     load_hand_poses,
     save_hand_poses,
@@ -95,6 +96,7 @@ def drive_finger(c, block, base, side, speed):
 
 def snapshot_positions(cfg, state):
     """Whole-hand (base, side) cursor -> 8-int servo-frame positions array."""
+    # Cursor == live hardware position (torque is always ON), so no present-pos read needed.
     out = [0] * 8
     for name in FINGERS:
         block = cfg.fingers[name]
@@ -121,7 +123,7 @@ def maybe_save(cfg, poses_cfg, state):
 
 def main():
     cfg = load_hand_calibration(YAML_PATH)
-    poses_cfg = load_hand_poses(HAND_CONFIG_PATH)
+    poses_cfg = load_hand_poses(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else HandPoseConfig()
     limits_by_finger = cfg.limits_by_finger()
     all_ids = [s for block in cfg.fingers.values() for s in (block.servo_1.id, block.servo_2.id)]
 
