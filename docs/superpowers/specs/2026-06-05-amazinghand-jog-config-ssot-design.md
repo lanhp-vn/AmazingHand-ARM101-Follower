@@ -89,11 +89,12 @@ Two pieces of infrastructure already exist and **must be reused, not reinvented*
 **GUI (`gui/hand_panel.py`):**
 
 - `_write_yaml` is refactored to call `save_hand_poses(self._poses_path, self._poses)`.
-- `_snapshot_positions` is refactored to call the shared converter (§3.3) so the GUI and
-  `jog.py` produce byte-identical poses.
+- `_snapshot_positions` is refactored to call the shared converter (passing its existing
+  `(-70, 90)` bounds) so the conversion formula lives in one place. Output is unchanged.
 
-**Converter (`hand/kinematics.py`)** — new pure helper, the single source for
-logical→servo-frame conversion:
+**Converter (`hand/kinematics.py`)** — new pure helper, the single source for the
+logical→servo-frame conversion **formula** (the `compose_finger` + `even_id_inversion`
+sequence that the GUI's `_snapshot_positions` currently inlines):
 
 ```python
 def finger_positions_to_servo_frame(
@@ -102,8 +103,8 @@ def finger_positions_to_servo_frame(
 ) -> tuple[int, int]:
     """(base, side) logical -> (odd_servo_val, even_servo_val) in YAML/servo frame.
 
-    Mirrors the GUI's _snapshot_positions math: compose to a symmetric servo pair,
-    then even-ID pre-inversion. Caller places results at out[odd_id-1] / out[even_id-1].
+    Composes to a symmetric servo pair (clamped to [servo_min, servo_max]), then
+    applies even-ID pre-inversion. Caller places results at out[odd_id-1] / out[even_id-1].
     """
     pos1, pos2 = compose_finger(base, side, servo_min, servo_max)
     return (
@@ -112,8 +113,16 @@ def finger_positions_to_servo_frame(
     )
 ```
 
-(The GUI's `_SERVO_LOGICAL_MIN/MAX` equal the `(-40, 110)` defaults, so passing them is
-equivalent — verify during implementation to keep the byte-identical guarantee.)
+**Servo-bound note (corrected):** the GUI clamps its save to
+`_SERVO_LOGICAL_MIN, _SERVO_LOGICAL_MAX = -70, 90`, while the calib scripts' *live drive*
+(`RangeCalib`, `SetPose`, `FingerTest`) uses `compose_finger`'s `(-40, 110)` defaults. The
+shared helper is the **formula**, parameterized by bounds — each caller keeps its own:
+- The **GUI** calls it with its existing `(-70, 90)` (behavior unchanged).
+- **jog.py** uses the `(-40, 110)` defaults for *both* live drive and save, so the saved pose
+  equals what the operator commanded (no corner clamp below calibrated reach — e.g. thumb
+  `base_max = 100` must survive) and remains GUI-loadable (the GUI's load path,
+  `decompose_finger`, accepts up to 110). "Byte-identical to the GUI" is **not** a goal;
+  "saved == commanded, and GUI-loadable" is.
 
 **Scripts (refactor all six):**
 
