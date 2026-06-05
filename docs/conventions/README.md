@@ -12,6 +12,7 @@ New contributors should read in this order:
 4. **[04-testing-verification.md](04-testing-verification.md)** before adding code, not after.
 5. **[05-git-workflow.md](05-git-workflow.md)** when you're ready to commit.
 6. **[06-documentation-protocol.md](06-documentation-protocol.md)** when you change something that the repo-root `CLAUDE.md` or `README.md` describes.
+7. **[07-kiss-simplicity.md](07-kiss-simplicity.md)** — cross-cutting: prefer the simplest design that satisfies the requirement and the Iron Laws.
 
 ## All files
 
@@ -24,6 +25,7 @@ New contributors should read in this order:
 | 04 | [04-testing-verification.md](04-testing-verification.md) | Testing pyramid: host unit → on-bench integration. No HIL CI. |
 | 05 | [05-git-workflow.md](05-git-workflow.md) | Branches, commits, PRs, atomic cross-device commit rule |
 | 06 | [06-documentation-protocol.md](06-documentation-protocol.md) | How `CLAUDE.md` and `README.md` at repo root get refreshed; DRY / canonical ownership registry (IL-7) |
+| 07 | [07-kiss-simplicity.md](07-kiss-simplicity.md) | KISS — prefer the simplest design; one responsibility per unit; YAGNI; mirror existing shapes |
 
 `docs/BOM.md` lives one level up — it's the bill of materials + host PC spec snapshot, not a convention.
 

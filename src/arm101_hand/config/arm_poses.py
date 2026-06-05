@@ -55,7 +55,7 @@ def load_arm_poses(path: Path) -> ArmPoseConfig:
 
 _SAVE_HEADER = (
     "# data/arm_config.yaml -- arm poses (degrees per joint; lerobot use_degrees mode).\n"
-    "# MACHINE-MANAGED: rewritten by jog.py ('s' to save) and the GUI; do not hand-edit\n"
+    "# MACHINE-MANAGED: rewritten by jog.py ('s' to save); do not hand-edit\n"
     "# (comments are regenerated on save). 'home' is the default parking / safe-park pose.\n"
 )
 

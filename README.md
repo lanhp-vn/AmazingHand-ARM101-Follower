@@ -103,7 +103,7 @@ uv run python scripts/calibration/so_arm101/jog.py
 src/arm101_hand/        # device + application layer (subclass + console scripts)
 scripts/calibration/    # AmazingHand + SO-ARM101 calibration runners
 docs/BOM.md             # bill of materials, host PC spec
-docs/conventions/       # 00 Iron Laws → 06 docs protocol
+docs/conventions/       # 00 Iron Laws → 07 KISS
 references/             # 5 git submodules — read-only (IL-2)
 ```
 
