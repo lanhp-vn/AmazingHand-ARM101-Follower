@@ -8,9 +8,9 @@ arm_config.yaml documents for the GUI.
 After connect() the script pushes the on-file calibration to the motors so degree targets
 physically match the recorded range (writes the MOTORS, never the JSON -- IL-5).
 
-On exit (Enter, Ctrl+C, or EOF) the arm is first driven back to the centered home (0) and
-only then is torque released, so it never drops under gravity from the held pose (see
-_common.park_home_and_release).
+On exit (Enter, Ctrl+C, or EOF) torque is released IN PLACE -- no auto-home (that would be a
+surprise movement). The script first prints a reminder and waits for Enter, so you can move
+the arm to home / a resting pose by hand before it goes limp and sags under gravity.
 
 Usage:
   uv run python scripts/calibration/so_arm101/set_pose.py home
@@ -28,10 +28,9 @@ from _common import (
     ARM_CONFIG_PATH,
     CALIB_PATH,
     build_follower,
+    confirm_and_release,
     gentle_velocity,
     load_arm_app_config,
-    load_home_degrees,
-    park_home_and_release,
 )
 
 from arm101_hand.config import load_arm_poses
@@ -83,7 +82,6 @@ def main() -> int:
     cfg = load_arm_app_config()
     follower = build_follower(cfg, use_degrees=True)  # DEGREES
     vel = gentle_velocity(cfg)
-    home = load_home_degrees()
 
     torque_on = False
     print(f"Connecting on {cfg.arm.port}; driving to '{name}' ...")
@@ -101,19 +99,13 @@ def main() -> int:
         follower.send_action({f"{j}.pos": v for j, v in targets.items()})
         time.sleep(_SETTLE_S)
         print(f"Holding '{name}' under torque: {targets}")
-        input("Press Enter to return home and release torque... ")
     except (EOFError, KeyboardInterrupt):
-        print("\n^C/EOF -- returning home")
+        print("\n^C/EOF -- exiting")
     finally:
-        # Always return to the centered home before releasing torque (see
-        # park_home_and_release): avoids the arm dropping from the held pose.
+        # No auto-home on exit (a surprise movement). Release torque in place; if still
+        # holding, confirm_and_release prints a reminder + waits for Enter before releasing.
         if follower.is_connected:
-            if torque_on:
-                print("Returning to home before releasing torque ...")
-                park_home_and_release(follower, home, vel)
-                print("Home reached; torque off.")
-            else:
-                follower.bus.disable_torque()
+            confirm_and_release(follower, torque_on)
             follower.disconnect()
             print("Bus closed.")
     return 0

@@ -11,8 +11,8 @@ Controls (torque ON to move):
   h             home active joint to its default-home value (arm_config.yaml poses.home)
   t             toggle torque (off = hand-pose by hand; on = resync + hold)
   s             save current pose to data/arm_config.yaml (prompts for a name)
-  q / Ctrl+C    return all joints to the default home, release torque, exit
-                (if torque is OFF, just disconnects in place)
+  q / Ctrl+C    release torque and exit IN PLACE -- no auto-home; prints a reminder and
+                asks for confirmation before releasing (if torque is OFF, disconnects in place)
 
 Windows-only: uses msvcrt.getwch for raw key reads. Pure jog logic is in
 arm101_hand.robots.arm_jog (unit-tested); this file only does I/O.
@@ -30,10 +30,10 @@ from _common import (
     ARM_CONFIG_PATH,
     CALIB_PATH,
     build_follower,
+    confirm_and_release,
     gentle_velocity,
     load_arm_app_config,
     load_home_degrees,
-    park_home_and_release,
 )
 
 from arm101_hand.config import ArmPose, ArmPoseConfig, load_arm_poses, save_arm_poses
@@ -143,15 +143,10 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n^C -- exiting")
     finally:
-        # Return home then release torque, unless torque was toggled off (hand-pose mode),
-        # in which case leave the arm where it is and just disconnect.
+        # No auto-home on quit (a surprise movement). Release torque in place; if the arm is
+        # still holding a pose, confirm_and_release reminds + waits for Enter first.
         if follower.is_connected:
-            if state is not None and state.torque_on:
-                print("Returning to home before releasing torque ...")
-                park_home_and_release(follower, home, vel)
-                print("Home reached; torque off.")
-            else:
-                follower.bus.disable_torque()
+            confirm_and_release(follower, bool(state is not None and state.torque_on))
             follower.disconnect()
             print("Bus closed.")
     return 0

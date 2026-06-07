@@ -10,9 +10,10 @@ After connect() the script pushes the on-file calibration to the motors
 regardless of the motors' current EEPROM offsets. This writes the MOTORS, never the JSON
 (IL-5).
 
-On every exit path -- normal completion, Ctrl+C, or an error after torque-on -- the arm
-is first driven back to the centered home (0) and only then is torque released, so it
-never drops under gravity from an extended pose (see _common.park_home_and_release).
+On every exit path -- normal completion, Ctrl+C, or an error after torque-on -- torque is
+released IN PLACE (no auto-home; that would be a surprise movement). After a normal sweep each
+joint is back at mid-range (0); on an early exit a joint may be mid-sweep. The script prints a
+reminder and waits for Enter before releasing, so you can park the arm by hand if needed.
 
 Usage:
   uv run python scripts/calibration/so_arm101/sweep.py shoulder_pan
@@ -29,10 +30,9 @@ import time
 
 from _common import (
     build_follower,
+    confirm_and_release,
     gentle_velocity,
     load_arm_app_config,
-    load_home_degrees,
-    park_home_and_release,
 )
 
 from arm101_hand.robots.calibration_summary import ARM_JOINTS
@@ -74,7 +74,6 @@ def main() -> int:
     cfg = load_arm_app_config()
     follower = build_follower(cfg, use_degrees=False)  # RANGE_M100_100
     vel = gentle_velocity(cfg)
-    home = load_home_degrees()
 
     torque_on = False
     print(f"Connecting on {cfg.arm.port} ...")
@@ -106,15 +105,10 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n^C -- stopping")
     finally:
-        # Always return to the default-home pose before releasing torque (see
-        # park_home_and_release): avoids the arm dropping from an extended pose.
+        # No auto-home on exit (a surprise movement). Release torque in place; if still
+        # holding, confirm_and_release prints a reminder + waits for Enter before releasing.
         if follower.is_connected:
-            if torque_on:
-                print("Returning to home before releasing torque ...")
-                park_home_and_release(follower, home, vel)
-                print("Home reached; torque off.")
-            else:
-                follower.bus.disable_torque()
+            confirm_and_release(follower, torque_on)
             follower.disconnect()
             print("Bus closed.")
     return 0

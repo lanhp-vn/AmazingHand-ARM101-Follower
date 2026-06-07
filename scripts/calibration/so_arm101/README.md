@@ -110,18 +110,15 @@ the recorded range. This writes the **motors**, not the JSON. `show_calib.py --l
 not, so its live degrees assume the motors still hold the committed calibration from the
 last calibrate run.
 
-**Safe release (motion scripts).** `sweep.py`, `set_pose.py`, and `jog.py` always return the
-arm to the **default-home pose** (`data/arm_config.yaml` → `poses.home`, degrees)
-before disabling torque — on normal completion, on `Ctrl+C`/`Enter`/EOF, and after an error
-once torque is on. The default home is the arm's natural folded rest captured from hardware,
-so torque-off barely moves it; this avoids the wrist (and the mounted AmazingHand) dropping
-under gravity from an extended pose. It mirrors the `safe_park` intent in
-`data/app_config.yaml` and is implemented once in `_common.park_home_and_release`, which
-converts the home degrees to raw encoder steps so it works in any norm mode. To change the
-home, edit `poses.home` (or jog there and read `show_calib`/`scan`, then update it).
-(`scan.py` and `show_calib.py` are read-only — they never enable torque or move, so there is
-nothing to re-home. `jog.py` exited via the `t` torque-off / hand-pose path disconnects in
-place rather than re-homing.)
+**Release on exit (motion scripts).** `sweep.py`, `set_pose.py`, `jog.py`, and `capture_pose.py`
+**never auto-return the arm to home on exit** — that would be a surprise movement. Instead, if
+the arm is still holding a pose under torque, they print a reminder and wait for `Enter` before
+releasing, so you can move the arm to home / a resting pose by hand first; otherwise it sags
+under gravity from an extended pose. `Ctrl+C`/EOF at the prompt releases anyway (IL-4). This is
+implemented once in `_common.confirm_and_release`. To park the arm at home, drive there
+explicitly with `set_pose.py home`. (`scan.py` and `show_calib.py` are read-only — they never
+enable torque or move. `jog.py` left in the `t` torque-off / hand-pose state just disconnects
+in place.)
 
 **Jog controls (`jog.py`).** Torque ON to move; `msvcrt` raw keys:
 
@@ -133,7 +130,7 @@ place rather than re-homing.)
 | `h` | home active joint to its default-home value (`poses.home`) |
 | `t` | toggle torque (off = hand-pose by hand; on = resync + hold) |
 | `s` | save current pose to `data/arm_config.yaml` (prompts for a name) |
-| `q` / `Ctrl+C` | return home, release torque, exit (if torque off: disconnect in place) |
+| `q` / `Ctrl+C` | release torque & exit in place — no auto-home; reminder + confirm first (if torque off: disconnect in place) |
 
 Saved poses land in `data/arm_config.yaml` and are drivable by name with `set_pose.py`.
 

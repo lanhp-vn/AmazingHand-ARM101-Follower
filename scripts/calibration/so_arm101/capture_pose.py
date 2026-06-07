@@ -4,11 +4,12 @@ Workflow (no jogging, no numeric entry): the arm goes limp so you move it to the
 pose by hand, then Enter captures the present motor degrees and holds the pose under torque
 so it does not sag. You can save the captured degrees under a name (e.g. ``home``). Then:
 
-  h   return to home, release torque, and capture another pose
-  q   return to home, release torque, and quit
+  h   release torque (in place) and capture another pose
+  q   release torque (in place) and quit
 
-Both routes drive back to the configured home BEFORE releasing torque (see
-_common.park_home_and_release), so the arm never drops under gravity from the held pose.
+There is no auto-home (that would be a surprise movement). On quit the script prints a
+reminder and waits for Enter before releasing torque, so you can move the arm to a resting
+pose by hand first; otherwise it sags under gravity from the held pose.
 
 Usage:
   uv run python scripts/calibration/so_arm101/capture_pose.py
@@ -26,10 +27,9 @@ import time
 from _common import (
     ARM_CONFIG_PATH,
     build_follower,
+    confirm_and_release,
     gentle_velocity,
     load_arm_app_config,
-    load_home_degrees,
-    park_home_and_release,
 )
 
 from arm101_hand.config import ArmPose, ArmPoseConfig, load_arm_poses, save_arm_poses
@@ -62,7 +62,7 @@ def _menu() -> str:
     """Re-prompt until the operator types h or q; EOF/Ctrl-C -> q."""
     while True:
         try:
-            choice = input("[h] return home & capture another   [q] return home & quit: ").strip().lower()
+            choice = input("[h] capture another   [q] release torque & quit: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             return "q"
         if choice in ("h", "q"):
@@ -74,7 +74,6 @@ def main() -> int:
     cfg = load_arm_app_config()
     follower = build_follower(cfg, use_degrees=True)  # DEGREES
     vel = gentle_velocity(cfg)
-    home = load_home_degrees()
 
     torque_on = False
     print(f"Connecting on {cfg.arm.port} ...")
@@ -110,21 +109,18 @@ def main() -> int:
             _maybe_save(captured)
 
             choice = _menu()
-            print("Returning to home before releasing torque ...")
-            park_home_and_release(follower, home, vel)
-            torque_on = False
-            print("Home reached; torque off.")
             if choice == "q":
-                break
+                break  # held under torque -> finally prints the reminder + releases
+            # h: release torque in place for the next hand-posed capture (operator is present).
+            follower.bus.disable_torque()
+            torque_on = False
     except (EOFError, KeyboardInterrupt):
-        print("\n^C/EOF -- returning home")
+        print("\n^C/EOF -- exiting")
     finally:
+        # No auto-home on quit (a surprise movement). Release torque in place; if still
+        # holding the captured pose, confirm_and_release reminds + waits for Enter first.
         if follower.is_connected:
-            if torque_on:
-                print("Returning to home before releasing torque ...")
-                park_home_and_release(follower, home, vel)
-            else:
-                follower.bus.disable_torque()
+            confirm_and_release(follower, torque_on)
             follower.disconnect()
             print("Bus closed.")
     return 0
