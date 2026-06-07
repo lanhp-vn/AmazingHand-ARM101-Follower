@@ -19,3 +19,21 @@
 [submodule "references/AmazingHandControl"]
 	path = references/AmazingHandControl
 	url = https://github.com/Betatester777/AmazingHandControl
+[submodule "references/Anthropic/skills"]
+	path = references/Anthropic/skills
+	url = https://github.com/anthropics/skills
+[submodule "references/Anthropic/claude-plugins-official"]
+	path = references/Anthropic/claude-plugins-official
+	url = https://github.com/anthropics/claude-plugins-official
+[submodule "references/Anthropic/claude-code-action"]
+	path = references/Anthropic/claude-code-action
+	url = https://github.com/anthropics/claude-code-action
+[submodule "references/Anthropic/claude-code"]
+	path = references/Anthropic/claude-code
+	url = https://github.com/anthropics/claude-code
+[submodule "references/Anthropic/claude-cookbooks"]
+	path = references/Anthropic/claude-cookbooks
+	url = https://github.com/anthropics/claude-cookbooks
+[submodule "references/Anthropic/claude-code-security-review"]
+	path = references/Anthropic/claude-code-security-review
+	url = https://github.com/anthropics/claude-code-security-review
