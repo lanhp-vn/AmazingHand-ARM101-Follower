@@ -16,7 +16,7 @@
 ## 1. Core Principles
 
 1. **Types where they help.** Public function signatures get type hints. Internal one-liners may not.
-2. **Single source of truth for config defaults.** A pydantic model's defaults must match the YAML they describe (e.g., `AmazingHand_calib_values.yaml`).
+2. **Single source of truth for config defaults.** A pydantic model's defaults must match the YAML they describe (e.g., `hand_calib_values.yaml`).
 3. **Scripts must degrade gracefully.** A calibration script that opens a COM port must handle the port being held by another process — log and exit nonzero, don't traceback into the user's face.
 4. **Procedural where possible; classes where state matters.** Don't over-architect a 50-line script.
 5. **Fail fast on startup, degrade in the loop.** Missing port → exit 1. Transient I/O glitch in loop → log a warning and retry once.
@@ -46,7 +46,7 @@ arm101-hand/
 │   └── scripts/             # application layer — console-script entries
 ├── scripts/                 # application layer — runnable scripts
 │   └── calibration/
-│       ├── AmazingHand/
+│       ├── amazing_hand/
 │       └── so_arm101/
 └── tests/                   # pytest, when we start writing them
 ```
@@ -186,7 +186,7 @@ def load_config(path: Path) -> AmazingHandConfig:
 **Rules**:
 
 - Always `yaml.safe_load()`. `yaml.load()` can execute arbitrary Python.
-- Defaults in the Pydantic model **must match** the reference YAML in `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml`. Drift breaks the "works out of the box" promise.
+- Defaults in the Pydantic model **must match** the reference YAML in `scripts/calibration/amazing_hand/hand_calib_values.yaml`. Drift breaks the "works out of the box" promise.
 - **Never read config mid-run.** Load at startup, use the immutable Pydantic object thereafter.
 
 ## 7. Logging
@@ -316,7 +316,7 @@ log = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--config", type=Path, default=Path("scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml"))
+    p.add_argument("--config", type=Path, default=Path("scripts/calibration/amazing_hand/hand_calib_values.yaml"))
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args()
 

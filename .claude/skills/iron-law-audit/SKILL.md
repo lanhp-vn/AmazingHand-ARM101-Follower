@@ -57,7 +57,7 @@ Source: hand IDs 1–8 (odd-right/even-left per finger), arm IDs 1–5 shoulder�
 Checks:
 - `Grep("\\bid\\s*=\\s*6\\b|\"gripper\"|MotorNormMode\\.RANGE_0_100", path="src/arm101_hand")` — flag any reintroduction of motor ID 6 / gripper config to the arm.
 - `Grep("Motor\\(\\s*[1-9]", path="src/arm101_hand/robots")` — confirm arm motors are 1–5 only.
-- `git diff main...HEAD scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml` — confirm hand IDs stay within 1–8 if the YAML changed.
+- `git diff main...HEAD scripts/calibration/amazing_hand/hand_calib_values.yaml` — confirm hand IDs stay within 1–8 if the YAML changed.
 
 Verdict:
 - `FAIL` if motor 6 reappears in the arm config without a deliberate IL-3 amendment in `00-iron-laws.md` (also part of the diff).
@@ -77,7 +77,7 @@ Verdict:
 ### 6. IL-5 — Calibration in version control
 
 Checks:
-- If any `scripts/calibration/AmazingHand/*.py` or any `src/arm101_hand/robots/*.py` changed in a way that alters calibration semantics (motor count, range, normalization mode), confirm `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml` is also in the diff (or that the user has noted "no calibration impact" in the commit body).
+- If any `scripts/calibration/amazing_hand/*.py` or any `src/arm101_hand/robots/*.py` changed in a way that alters calibration semantics (motor count, range, normalization mode), confirm `scripts/calibration/amazing_hand/hand_calib_values.yaml` is also in the diff (or that the user has noted "no calibration impact" in the commit body).
 - For SO-ARM101: the calibration JSON lives outside the repo (lerobot default `~/.cache/...`). If the diff changes the arm's motor dict or normalization, flag a reminder to re-run `arm101-calibrate-follower` on the bench.
 
 Verdict:
@@ -89,7 +89,7 @@ Verdict:
 Source: changes touching both arm and hand land in one commit.
 
 Checks:
-- For each commit in `git log main..HEAD --oneline`: run `git show --stat <sha>` and classify changed paths into `arm` (`src/arm101_hand/robots/`, `scripts/calibration/so_arm101/`) vs `hand` (`src/arm101_hand/hand/`, `scripts/calibration/AmazingHand/`) vs `shared` (`src/arm101_hand/config/`, repo-root).
+- For each commit in `git log main..HEAD --oneline`: run `git show --stat <sha>` and classify changed paths into `arm` (`src/arm101_hand/robots/`, `scripts/calibration/so_arm101/`) vs `hand` (`src/arm101_hand/hand/`, `scripts/calibration/amazing_hand/`) vs `shared` (`src/arm101_hand/config/`, repo-root).
 - If any single PR-level change touches both arm AND hand but is split across commits **without** each commit independently leaving the repo runnable, flag IL-6.
 
 Verdict:

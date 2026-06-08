@@ -22,7 +22,7 @@ Full text in `docs/conventions/00-iron-laws.md`. Read that file before editing.
 - **IL-2 — `references/` is read-only.** Five vendored submodules (lerobot, AmazingHand, FeetechServo, rustypot, FTServo_Python). Adapt by transferring into `src/` or `scripts/`.
 - **IL-3 — Motor ID canon.** Hand: IDs 1–8 (odd-right/even-left per finger). Arm: IDs 1–5 shoulder→wrist. **ID 6 is physically absent on the arm.**
 - **IL-4 — COM-port discipline.** Single owner per bus. Close FD.exe / serial monitors / stale Python sessions before opening.
-- **IL-5 — Calibration in version control, in-tree only.** Hand: `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml`. Arm: `scripts/calibration/so_arm101/<id>.json` — the `SO101FollowerNoGripperConfig` subclass defaults `calibration_dir` to that path so `~/.cache/huggingface/lerobot/...` is never written to.
+- **IL-5 — Calibration in version control, in-tree only.** Hand: `scripts/calibration/amazing_hand/hand_calib_values.yaml`. Arm: `scripts/calibration/so_arm101/<id>.json` — the `SO101FollowerNoGripperConfig` subclass defaults `calibration_dir` to that path so `~/.cache/huggingface/lerobot/...` is never written to.
 - **IL-6 — Atomic cross-device commits.** Changes touching both arm and hand ship in one commit.
 - **IL-7 — Documentation is single-source-of-truth.** One canonical home per fact; pointers everywhere else.
 
@@ -35,14 +35,14 @@ AmazingHand-ARM101-Follower/
 ├── .python-version            # 3.12
 ├── src/arm101_hand/
 │   ├── robots/                # device layer — SO-ARM101 subclass
-│   ├── hand/                  # device layer — rustypot controller, kinematics, range-calib state machine
+│   ├── hand/                  # device layer — rustypot kinematics, pose-jog + range-calib state machines
 │   ├── config/                # primitive layer — pydantic schemas (calibration v2, poses, app config)
-│   ├── gui/                   # application layer — PySide6 unified GUI (hand + arm)
-│   └── scripts/               # application layer — console-script entries
+│   └── scripts/               # application layer — console-script entries + shared device_setup
 ├── scripts/
 │   ├── calibration/
-│   │   ├── AmazingHand/       # 5 calibration/test scripts + YAML state (v2 schema)
-│   │   └── so_arm101/         # follower calibration runner
+│   │   ├── amazing_hand/      # snake_case calibration/test/jog scripts + YAML state (v2 schema)
+│   │   └── so_arm101/         # follower calibration runner + sweep/set_pose/jog/capture_pose
+│   ├── diagnostics/           # dual-device scan/show_calib (--device arm|hand) + device-agnostic find_port
 │   ├── teleop/                # planned
 │   └── demos/                 # planned (FullHand_Demo etc.)
 ├── tests/                     # host unit tests (tests/unit) + hardware-gated (tests/hardware)
@@ -62,12 +62,12 @@ uv sync                                   # provisions .venv from pyproject.toml
 # Discover COM ports (both buses)
 Get-PnpDevice -Class Ports -Status OK | Select-Object Name, DeviceID | Format-Table -AutoSize
 
-# AmazingHand calibration (full procedure in scripts/calibration/AmazingHand/README.md)
-uv run python scripts/calibration/AmazingHand/AmazingHand_MotorReset.py
-uv run python scripts/calibration/AmazingHand/AmazingHand_MiddlePos_FingerCalib.py
-uv run python scripts/calibration/AmazingHand/AmazingHand_RangeCalib.py      # Step 4: per-finger DOF limits
-uv run python scripts/calibration/AmazingHand/AmazingHand_FingerTest.py
-uv run python scripts/calibration/AmazingHand/jog.py                       # jog all fingers; save whole-hand pose to data/hand_config.yaml
+# AmazingHand calibration (full procedure in scripts/calibration/amazing_hand/README.md)
+uv run python scripts/calibration/amazing_hand/motor_reset.py
+uv run python scripts/calibration/amazing_hand/middle_calib.py
+uv run python scripts/calibration/amazing_hand/range_calib.py              # per-finger DOF limits
+uv run python scripts/calibration/amazing_hand/finger_test.py
+uv run python scripts/calibration/amazing_hand/jog.py                      # jog all fingers; save whole-hand pose to data/hand_config.yaml
 
 # SO-ARM101 follower calibration (full procedure in scripts/calibration/so_arm101/README.md)
 # Output JSON lands at scripts/calibration/so_arm101/<id>.json (subclass default).
@@ -76,16 +76,16 @@ uv run arm101-calibrate-follower `
     --robot.port=COM<X> `
     --robot.id=so101_follower
 
-# Discover ports via lerobot's helper
-uv run python scripts/calibration/so_arm101/find_port.py
+# Dual-device diagnostics (read-only re: calibration; never write so101_follower.json — IL-5)
+uv run python scripts/diagnostics/find_port.py                            # device-agnostic; lists all COM ports
+uv run python scripts/diagnostics/scan.py --device arm                    # bus health check (--device arm|hand, torque off)
+uv run python scripts/diagnostics/show_calib.py --device arm [--live]     # dump calibration; --live compares present pos
 
-# SO-ARM101 verify/audit helpers (read-only re: calibration; never write so101_follower.json — IL-5)
-# Detail in scripts/calibration/so_arm101/README.md §6.
-uv run python scripts/calibration/so_arm101/scan.py                       # pre-flight bus health check (torque off)
-uv run python scripts/calibration/so_arm101/show_calib.py [--live]        # dump calibration; --live compares present pos
+# SO-ARM101 motion helpers (read clamp range from so101_follower.json; never write it — IL-5)
+# Per-script detail in scripts/calibration/so_arm101/README.md §6.
 uv run python scripts/calibration/so_arm101/sweep.py <joint|all>          # range-verify sweep to endpoints (--margin 90)
 uv run python scripts/calibration/so_arm101/set_pose.py home              # drive to a poses entry (home = folded storage), hold
-uv run python scripts/calibration/so_arm101/jog.py                       # interactive keyboard jog; reads clamp range, saves poses to data/arm_config.yaml
+uv run python scripts/calibration/so_arm101/jog.py                       # interactive keyboard jog; saves poses to data/arm_config.yaml
 uv run python scripts/calibration/so_arm101/capture_pose.py               # hand-pose the arm by hand, capture present degrees, save as a pose
 
 # Lint / format / type-check / test
@@ -121,7 +121,6 @@ uv run pytest -m 'not hardware'           # host unit tests (no bus)
 
 ## 7. Tech-debt & known limitations
 
-- **No teleop, no policy, no dataset code.** The hand controller + GUI drive poses; no teleoperation or learned-policy path yet.
+- **No teleop, no policy, no dataset code.** The jog / calibration / diagnostic scripts drive poses; no teleoperation or learned-policy path yet.
 - **No CI.** `ruff` / `pytest` are local-only for now.
 - **No discrete GPU.** Local ML training is CPU-bound; large-policy work needs cloud.
-- **`mypy` baseline noise.** PyYAML ships no stubs, so `import yaml` lines report `import-untyped` until `types-PyYAML` is added — pre-existing, not from current work.

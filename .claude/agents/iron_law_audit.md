@@ -41,7 +41,7 @@ IL-2 references read-only           PASS | FAIL | N/A | EVIDENCE-INSUFFICIENT
 [... IL-3 through IL-7 ...]
 
 Proposed PR checklist (paste into PR body):
-- [x] IL-3 motor ID canon — adds entry to AmazingHand_calib_values.yaml
+- [x] IL-3 motor ID canon — adds entry to hand_calib_values.yaml
 - [ ] IL-1 voltage isolation
 - [ ] IL-2 references read-only
 - [x] IL-5 calibration in version control

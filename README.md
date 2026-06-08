@@ -55,24 +55,24 @@ Get-PnpDevice -Class Ports -Status OK | Select-Object Name, DeviceID | Format-Ta
 
 Note the COM number for each USB↔TTL bridge. On the dev host the AmazingHand bridge is `COM18`; the SO-ARM101 bridge gets a separate number.
 
-Alternatively, lerobot's interactive port helper:
+Alternatively, lerobot's interactive port helper (device-agnostic — lists all ports):
 
 ```powershell
-uv run python scripts/calibration/so_arm101/find_port.py
+uv run python scripts/diagnostics/find_port.py
 ```
 
 ### 2. AmazingHand finger calibration
 
-Full procedure (5 steps: ID burn → 0° reset → middle-position tuning → range-limit calibration → audit) is in [`scripts/calibration/AmazingHand/README.md`](scripts/calibration/AmazingHand/README.md). After the first ID-burn step (one-time, with FD.exe), the Python flow is:
+Full procedure (5 steps: ID burn → 0° reset → middle-position tuning → range-limit calibration → audit) is in [`scripts/calibration/amazing_hand/README.md`](scripts/calibration/amazing_hand/README.md). After the first ID-burn step (one-time, with FD.exe), the Python flow is:
 
 ```powershell
-uv run python scripts/calibration/AmazingHand/AmazingHand_MotorReset.py
-uv run python scripts/calibration/AmazingHand/AmazingHand_MiddlePos_FingerCalib.py
-uv run python scripts/calibration/AmazingHand/AmazingHand_RangeCalib.py
-uv run python scripts/calibration/AmazingHand/AmazingHand_FingerTest.py
+uv run python scripts/calibration/amazing_hand/motor_reset.py
+uv run python scripts/calibration/amazing_hand/middle_calib.py
+uv run python scripts/calibration/amazing_hand/range_calib.py
+uv run python scripts/calibration/amazing_hand/finger_test.py
 ```
 
-All state lives in `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml`.
+All state lives in `scripts/calibration/amazing_hand/hand_calib_values.yaml`.
 
 ### 3. SO-ARM101 follower calibration
 
@@ -89,11 +89,11 @@ Replace `COM<X>` with the COM number from step 1. The output JSON goes to `scrip
 
 > **Important.** Use `arm101-calibrate-follower` (defined in `pyproject.toml`), not `lerobot-calibrate`. The upstream entry point doesn't know our `so101_follower_no_gripper` subclass exists.
 
-Once calibrated, a set of read-only verify/audit helpers lives alongside the runner — `scan.py` (pre-flight bus health check), `show_calib.py` (dump the calibration, `--live` to compare present positions), `sweep.py` (range-verify sweep to the calibrated endpoints), and `set_pose.py` (drive to a named pose and hold). They never write `so101_follower.json` — `arm101-calibrate-follower` stays the only thing that does. For interactive positioning there is also `jog.py`, a keyboard-jog tool that nudges each joint in degrees within its calibrated range and can save named poses to `data/arm_config.yaml` (it reads `so101_follower.json` for the clamp range but never writes it, IL-5). Per-script detail, including the full key controls for `jog.py`, is in [`scripts/calibration/so_arm101/README.md`](scripts/calibration/so_arm101/README.md) §6.
+Once calibrated, two kinds of read-only / motion helpers are available. Dual-device diagnostics live under `scripts/diagnostics/`: `scan.py --device arm|hand` (pre-flight bus health check) and `show_calib.py --device arm|hand [--live]` (dump the calibration, `--live` compares present positions). Arm-specific motion helpers stay alongside the runner under `scripts/calibration/so_arm101/`: `sweep.py` (range-verify sweep to the calibrated endpoints), `set_pose.py` (drive to a named pose and hold), `jog.py` (keyboard-jog each joint in degrees within its calibrated range, saving named poses to `data/arm_config.yaml`), and `capture_pose.py` (hand-pose the arm, capture present degrees, save). None of these write `so101_follower.json` — `arm101-calibrate-follower` stays the only thing that does (IL-5). Per-script detail, including the full key controls for `jog.py`, is in [`scripts/calibration/so_arm101/README.md`](scripts/calibration/so_arm101/README.md) §6.
 
 ```powershell
-uv run python scripts/calibration/so_arm101/scan.py
-uv run python scripts/calibration/so_arm101/show_calib.py
+uv run python scripts/diagnostics/scan.py --device arm
+uv run python scripts/diagnostics/show_calib.py --device arm
 uv run python scripts/calibration/so_arm101/jog.py
 ```
 
@@ -102,6 +102,7 @@ uv run python scripts/calibration/so_arm101/jog.py
 ```
 src/arm101_hand/        # device + application layer (subclass + console scripts)
 scripts/calibration/    # AmazingHand + SO-ARM101 calibration runners
+scripts/diagnostics/    # dual-device scan / show_calib / find_port
 docs/BOM.md             # bill of materials, host PC spec
 docs/conventions/       # 00 Iron Laws → 07 KISS
 references/             # 5 git submodules — read-only (IL-2)

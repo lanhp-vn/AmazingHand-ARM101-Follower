@@ -1,8 +1,8 @@
 """Pydantic schema for ``scripts/calibration/amazing_hand/hand_calib_values.yaml``.
 
 Loads the YAML via :func:`load_hand_calibration` and writes it back atomically
-via :func:`save_hand_calibration`. The GUI and audit scripts consume the
-per-servo ``middle_pos`` (for calibration-aware slider math, see
+via :func:`save_hand_calibration`. The calibration and diagnostic scripts consume
+the per-servo ``middle_pos`` (for calibration-aware logical↔servo math, see
 ``hand/kinematics.degrees_to_servo_radians``) and the per-finger DOF ``limits``
 (``base``/``side`` min/max, logical frame) that bound motion.
 """
@@ -15,8 +15,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# Canonical finger labels, per IL-3. The GUI displays "Pointer" instead of
-# "index", but the schema-level name stays "index".
+# Canonical finger labels, per IL-3. The first finger ("index") is the pointer
+# finger; the schema-level name stays "index".
 FINGER_NAMES = ("index", "middle", "ring", "thumb")
 
 

@@ -1,6 +1,6 @@
 """Pure (no-bus) helpers for reading and summarizing the SO-ARM101 follower calibration.
 
-Consumed by ``scripts/calibration/so_arm101/show_calib.py`` and ``set_pose.py``. Kept
+Consumed by ``scripts/diagnostics/show_calib.py`` and ``scripts/calibration/so_arm101/set_pose.py``. Kept
 free of serial I/O so it is unit-testable without hardware (test pyramid, IL §04).
 
 The calibration JSON (``scripts/calibration/so_arm101/so101_follower.json``) stores raw

@@ -211,7 +211,7 @@ def test_side_clamped_when_limits_passed() -> None:
 
 def test_clamps_are_opt_in() -> None:
     # With NO limit kwargs, behavior is unchanged: side is not clamped here, only
-    # the per-servo clamp applies. Guards backward compatibility with the GUI.
+    # the per-servo clamp applies. Guards the opt-in clamp contract (no limits → no base clamp).
     pos1, pos2 = compose_finger(0, 100, -40, 110)
     assert (pos1, pos2) == (-40, 100), "without limits, side is not clamped (legacy behavior)"
 

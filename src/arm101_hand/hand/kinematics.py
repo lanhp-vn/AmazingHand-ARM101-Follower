@@ -21,8 +21,7 @@ Adapted from ``references/AmazingHandControl/hand_logic.py`` (Apache-2.0,
 Ingo Dering, 2026) per IL-2: the `validate_pose_name`, `clamp`, `angle_rad`,
 `compute_auto_positions`, and `decompose_servo_positions` shapes all originate
 there. Renamed and trimmed (no ``auto_extremes`` interpolation, no telemetry
-formatters) for the unified-GUI scope; see ``docs/plans/01-unified-gui-spec.md``
-§5.2.
+formatters) when adapted into this workspace's hand-control scope.
 """
 
 from __future__ import annotations
@@ -169,7 +168,7 @@ def finger_positions_to_servo_frame(
     Composes to a symmetric servo pair (clamped to ``[servo_min, servo_max]``), then
     applies even-ID pre-inversion. The caller places the results at ``out[odd_id - 1]``
     and ``out[even_id - 1]`` of an 8-long positions array. This is the single source for
-    the conversion formula the GUI's ``hand_panel._snapshot_positions`` used to inline.
+    the logical→servo-frame conversion formula (compose + even-ID inversion).
 
     Precondition: ``odd_id`` must be an odd IL-3 motor ID and ``even_id`` an even one (1-8); ``even_id_inversion`` keys on parity.
     """
@@ -195,7 +194,7 @@ def decompose_finger(
 
     ``side`` is clamped to ``[side_min, side_max]`` as before. ``base`` is clamped
     to ``[base_min, base_max]`` only when both are supplied (opt-in; preserves the
-    legacy unclamped-``base`` behavior the GUI depends on).
+    legacy unclamped-``base`` behavior for callers that omit the base limits).
     """
     p1 = clamp(int(pos1), servo_min, servo_max)
     p2 = clamp(int(pos2), servo_min, servo_max)

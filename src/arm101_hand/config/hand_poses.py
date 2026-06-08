@@ -63,7 +63,7 @@ def save_hand_poses(path: Path, config: HandPoseConfig) -> None:
     """Write a ``HandPoseConfig`` to YAML atomically (tmp + ``os.replace``).
 
     The whole model is dumped, so ``sequences:`` and every other pose survive a
-    load-modify-save round-trip. Shared by the GUI pose manager and ``jog.py``.
+    load-modify-save round-trip. Used by ``jog.py`` and any pose-saving script.
     """
     payload = config.model_dump(mode="python")
     tmp = path.with_suffix(path.suffix + ".tmp")

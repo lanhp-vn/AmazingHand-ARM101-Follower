@@ -56,7 +56,7 @@ Per the upstream lerobot calibration flow:
 ## 4. Discover the COM port
 
 ```powershell
-uv run python scripts/calibration/so_arm101/find_port.py
+uv run python scripts/diagnostics/find_port.py
 ```
 
 Thin wrapper over `lerobot-find-port` (see `lerobot.scripts.lerobot_find_port`). The interactive flow asks you to unplug the adapter, hit Enter, replug, hit Enter again — the difference between the two enumerations is the port you want.
@@ -79,19 +79,24 @@ real mechanism. They keep `arm101-calibrate-follower` (lerobot) as the source of
 truth and **never write `so101_follower.json`** (IL-5). All read `arm.port` from
 `data/app_config.yaml`. Close any other bus owner first (IL-4).
 
+The read-only diagnostics (`scan.py`, `show_calib.py`, `find_port.py`) now live in
+`scripts/diagnostics/` and are dual-device — pass `--device arm` here (or `--device hand`
+for the AmazingHand). The motion helpers (`sweep.py`, `set_pose.py`, `jog.py`,
+`capture_pose.py`) stay in this folder.
+
 | Script | Motion? | Torque | Norm mode | Purpose |
 | --- | --- | --- | --- | --- |
-| `show_calib.py` | no | off | DEGREES | Print per-joint calibration (id, homing, range, degree span, midpoint). `--live` also reads present position. |
-| `scan.py` | no | off | raw | Ping motors 1–5; report position/load/voltage/temperature. Exit 1 if any motor is missing. |
+| `diagnostics/show_calib.py --device arm` | no | off | DEGREES | Print per-joint calibration (id, homing, range, degree span, midpoint). `--live` also reads present position. |
+| `diagnostics/scan.py --device arm` | no | off | raw | Ping motors 1–5; report position/load/voltage/temperature. Exit 1 if any motor is missing. |
 | `sweep.py` | yes | on→off | RANGE_M100_100 | Drive a joint (or `all`) to its calibrated endpoints (`±margin`, default 90) and back; verify no buzz/stall. |
 | `set_pose.py` | yes | on→off | DEGREES | Drive to a `poses` entry from `data/arm_config.yaml` (`home` — the folded storage pose) and hold until Enter. |
 | `jog.py` | yes | on→off | DEGREES | Keyboard-jog each motor in degrees (clamped to range); `t` hand-pose toggle; `h` home a joint; `s` save current pose to `data/arm_config.yaml`. Returns home before releasing torque. |
 | `capture_pose.py` | yes | off→on→off | DEGREES | Torque off so you hand-pose the arm; Enter captures the present degrees and holds; save to `data/arm_config.yaml` `poses`. `h` = home & capture another, `q` = home & quit (both park home first). |
 
 ```powershell
-uv run python scripts/calibration/so_arm101/show_calib.py            # offline dump
-uv run python scripts/calibration/so_arm101/show_calib.py --live     # + live position
-uv run python scripts/calibration/so_arm101/scan.py                  # bus health (pre-flight)
+uv run python scripts/diagnostics/show_calib.py --device arm         # offline dump
+uv run python scripts/diagnostics/show_calib.py --device arm --live  # + live position
+uv run python scripts/diagnostics/scan.py --device arm               # bus health (pre-flight)
 uv run python scripts/calibration/so_arm101/sweep.py wrist_flex --margin 70
 uv run python scripts/calibration/so_arm101/set_pose.py home
 uv run python scripts/calibration/so_arm101/jog.py                  # interactive keyboard jog

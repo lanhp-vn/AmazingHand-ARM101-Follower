@@ -67,7 +67,7 @@ def _scan_arm() -> int:
 
 
 def _scan_hand() -> int:
-    from _hand_paths import HAND_CALIB_PATH  # noqa: PLC0415 -- see Step 2
+    from _hand_paths import HAND_CALIB_PATH
     from rustypot import Scs0009PyController
 
     from arm101_hand.config import load_hand_calibration

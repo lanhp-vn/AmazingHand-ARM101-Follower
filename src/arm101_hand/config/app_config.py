@@ -1,7 +1,7 @@
 """Pydantic schema for ``data/app_config.yaml`` (runtime safety + connection settings).
 
 Defaults match the seeded YAML so a ``AppConfig()`` instantiation produces the
-same shape the GUI loads at startup. Loaded once on launch; never re-read
+same shape the scripts load at startup. Loaded once per run; never re-read
 mid-run (per ``02-code-style-python.md`` §6).
 """
 

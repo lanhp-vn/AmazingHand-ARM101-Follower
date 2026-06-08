@@ -1,8 +1,8 @@
 """AmazingHand Jog & Save-Pose tool -- arrow-key jog of all fingers, then save.
 
 Move all four fingers with the keyboard (torque ON the whole time), then save the
-resulting whole-hand pose by name into ``data/hand_config.yaml`` -- the same store the
-unified GUI's pose manager uses. Mirrors the arm's ``so_arm101/jog.py``.
+resulting whole-hand pose by name into ``data/hand_config.yaml``. Mirrors the arm's
+``so_arm101/jog.py``.
 
 Config (serial + per-finger middle_pos + limits) is read from the canonical
 ``hand_calib_values.yaml`` (IL-5: this script never writes it).

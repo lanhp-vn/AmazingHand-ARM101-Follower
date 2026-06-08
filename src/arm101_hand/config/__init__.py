@@ -1,4 +1,4 @@
-"""Pydantic schemas for the unified-GUI YAML files (primitive layer).
+"""Pydantic schemas for the runtime config + calibration YAML files (primitive layer).
 
 - ``app_config`` → ``data/app_config.yaml``
 - ``hand_poses`` → ``data/hand_config.yaml``

@@ -2,8 +2,7 @@
 
 Poses come from data/arm_config.yaml ``poses`` (home -- the folded storage pose -- plus any
 poses saved via jog.py). Targets are in DEGREES relative to each joint's calibrated mid.
-An out-of-range value is warned and that joint is skipped, matching the behavior
-arm_config.yaml documents for the GUI.
+An out-of-range value is warned and that joint is skipped.
 
 After connect() the script pushes the on-file calibration to the motors so degree targets
 physically match the recorded range (writes the MOTORS, never the JSON -- IL-5).

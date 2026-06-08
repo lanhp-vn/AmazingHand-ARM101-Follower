@@ -162,7 +162,7 @@ So the four stored limits map to four physical extremes:
   in). Step 4 reads each finger's `middle_pos` and jogs relative to it — a bad
   middle makes the measured limits meaningless.
 - Close any other COM-port holder — FD.exe, serial monitors, a stale Python
-  session, the GUI (IL-4). Only one process may own the bus.
+  session (IL-4). Only one process may own the bus.
 - 5 V PSU on; bus wired; correct `com_port` in the YAML.
 
 #### 4.3 Run it
@@ -306,8 +306,7 @@ uv run python scripts/calibration/amazing_hand/set_pose.py        # prompts open
 
 Not a calibration step — a convenience for posing the whole hand by keyboard and saving
 the result. Torque stays ON; you jog each finger within its calibrated limits, then save
-the whole-hand pose by name into `data/hand_config.yaml` (the same store the unified GUI's
-pose manager reads). Mirrors the arm's `so_arm101/jog.py`.
+the whole-hand pose by name into `data/hand_config.yaml`. Mirrors the arm's `so_arm101/jog.py`.
 
 ```powershell
 uv run python scripts/calibration/amazing_hand/jog.py

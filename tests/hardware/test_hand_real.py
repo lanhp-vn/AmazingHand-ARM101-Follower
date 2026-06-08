@@ -9,7 +9,7 @@ Pre-flight (per IL-1 / IL-4):
 - No other process holds the port (close FD.exe, serial monitors, stale Python).
 
 Drives ``rustypot.Scs0009PyController`` directly (same path as
-``scripts/calibration/AmazingHand/jog.py``): connect, poll all 8 servos, nudge
+``scripts/calibration/amazing_hand/jog.py``): connect, poll all 8 servos, nudge
 the index finger's base by +5 deg, wait for arrival, return to neutral, then
 torque-off. No GUI/Qt dependency.
 """

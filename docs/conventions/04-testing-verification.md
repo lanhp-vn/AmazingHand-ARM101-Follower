@@ -156,7 +156,7 @@ Tests that need a realistic calibration shape can load the canonical YAML direct
 from pathlib import Path
 import yaml
 
-CALIB_PATH = Path("scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml")
+CALIB_PATH = Path("scripts/calibration/amazing_hand/hand_calib_values.yaml")
 
 def test_calibration_yaml_has_all_fingers():
     cfg = yaml.safe_load(CALIB_PATH.read_text())
@@ -172,7 +172,7 @@ These checks require the real arm + hand wired up. There is no automation; they 
 
 ### 5.1 Hand integration checklist
 
-- All 8 SCS0009 servos respond to ping (`uv run python scripts/calibration/AmazingHand/AmazingHand_FingerTest.py` exercises one finger; cycle through all four).
+- All 8 SCS0009 servos respond to ping (`uv run python scripts/calibration/amazing_hand/finger_test.py` exercises one finger; cycle through all four).
 - Calibration YAML matches mechanical reality (no servo whines at endpoints, no horn sits visibly off the middle plane at full-close).
 - Torque release on Ctrl+C / `q` works — the hand goes limp, no servo holds position.
 

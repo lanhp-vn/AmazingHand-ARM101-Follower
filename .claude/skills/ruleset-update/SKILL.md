@@ -28,7 +28,7 @@ Rewrite `.claude/settings.local.json` so the `allow` list reflects the user's ap
    | Session-specific entry (before) | Generalized rule (after) |
    | --- | --- |
    | `Bash(uv pip list)` | `Bash(uv pip *)` |
-   | `Bash(uv run python scripts/calibration/AmazingHand/AmazingHand_FingerTest.py)` | `Bash(uv run *)` |
+   | `Bash(uv run python scripts/calibration/amazing_hand/finger_test.py)` | `Bash(uv run *)` |
    | `Bash(uv sync --extra dev)` | `Bash(uv sync *)` |
    | `Bash(git log --oneline -20)` | `Bash(git *)` |
    | `Bash(Get-PnpDevice -Class Ports -Status OK)` | `Bash(Get-PnpDevice *)` |

@@ -61,7 +61,7 @@ Get-PnpDevice -Class Ports -Status OK |
 
 ```powershell
 try {
-    Test-Path "scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml" -PathType Leaf
+    Test-Path "scripts/calibration/amazing_hand/hand_calib_values.yaml" -PathType Leaf
     if ($LASTEXITCODE -ne 0) { throw "calibration YAML missing" }
 } catch {
     Write-Error $_.Exception.Message

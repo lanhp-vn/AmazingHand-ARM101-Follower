@@ -123,7 +123,7 @@ Every normative fact, procedure, spec, or reusable table lives in **one** Markdo
 
 - Cross-file link with anchor: `[IL-3](00-iron-laws.md#il-3-motor-id-assignment-is-canonical)`
 - Section reference: "see `01-module-layering.md` §2 for the import invariants"
-- Path-only reference: "the calibration YAML lives at `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml`"
+- Path-only reference: "the calibration YAML lives at `scripts/calibration/amazing_hand/hand_calib_values.yaml`"
 
 ### 10.1 Registry by domain
 
@@ -146,8 +146,8 @@ Every normative fact, procedure, spec, or reusable table lives in **one** Markdo
 #### Calibration
 | Topic | Canonical |
 |---|---|
-| AmazingHand finger calibration procedure | `scripts/calibration/AmazingHand/README.md` |
-| AmazingHand calibration values (live data) | `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml` |
+| AmazingHand finger calibration procedure | `scripts/calibration/amazing_hand/README.md` |
+| AmazingHand calibration values (live data) | `scripts/calibration/amazing_hand/hand_calib_values.yaml` |
 | SO-ARM101 follower calibration procedure | `scripts/calibration/so_arm101/README.md` |
 | SO-ARM101 calibration JSON location | lerobot default; `scripts/calibration/so_arm101/README.md` §3 |
 

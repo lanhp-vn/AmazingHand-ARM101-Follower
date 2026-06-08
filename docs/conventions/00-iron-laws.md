@@ -72,7 +72,7 @@ Get-PnpDevice -Class Ports -Status OK | Select-Object Name, DeviceID | Format-Ta
 
 All calibration files live **inside the workspace**. No project state is permitted in user-cache locations such as `~/.cache/huggingface/lerobot/`.
 
-- **Hand calibration** lives in `scripts/calibration/AmazingHand/AmazingHand_calib_values.yaml`. The three calibration scripts (`AmazingHand_MotorReset.py`, `AmazingHand_MiddlePos_FingerCalib.py`, `AmazingHand_FingerTest.py`) read from and write to that file.
+- **Hand calibration** lives in `scripts/calibration/amazing_hand/hand_calib_values.yaml`. The three calibration scripts (`motor_reset.py`, `middle_calib.py`, `finger_test.py`) read from and write to that file.
 - **Arm calibration** lives in `scripts/calibration/so_arm101/<id>.json`, where `<id>` is the value passed to `--robot.id`. The `SO101FollowerNoGripperConfig` subclass at `src/arm101_hand/robots/so101_follower_no_gripper.py` defaults `calibration_dir` to that in-tree path so the upstream `~/.cache/huggingface/lerobot/...` location is bypassed without the user having to remember a flag. `--robot.calibration_dir=<path>` still works as an explicit override when needed (e.g., A/B testing two calibrations).
 
 Never hand-edit a calibration file while a controller is connected — re-run the calibration script instead. Hand edits to live state miss safety re-checks (e.g., torque release on exit) and silently desync the on-disk values from the in-memory bus state.
