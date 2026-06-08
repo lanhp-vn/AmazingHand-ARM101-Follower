@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from arm101_hand.config import ArmConfig, load_arm_config, save_arm_config
+from arm101_hand.config import ArmConfig, ArmPose, ArmTuning, load_arm_config, save_arm_config
 
 
 def test_defaults_match_seed():
@@ -34,3 +34,29 @@ def test_extra_key_rejected(tmp_path: Path):
     out.write_text("schema_version: 1\nbogus: 1\n", encoding="utf-8")
     with pytest.raises(ValidationError):
         load_arm_config(out)
+
+
+@pytest.mark.parametrize(
+    "missing", ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+)
+def test_arm_pose_missing_field_rejected(missing: str) -> None:
+    fields = {
+        "shoulder_pan": 0.0,
+        "shoulder_lift": 0.0,
+        "elbow_flex": 0.0,
+        "wrist_flex": 0.0,
+        "wrist_roll": 0.0,
+    }
+    del fields[missing]
+    with pytest.raises(ValidationError):
+        ArmPose(**fields)
+
+
+def test_park_velocity_out_of_range_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ArmTuning(park_velocity=4096)
+
+
+def test_sweep_margin_at_100_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ArmTuning(sweep_margin_default=100)
