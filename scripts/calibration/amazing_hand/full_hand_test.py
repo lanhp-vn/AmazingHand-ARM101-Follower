@@ -16,6 +16,7 @@ to be the final end-to-end sanity check that proves the calibration is correct.
 """
 
 import contextlib
+import math
 import time
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from rustypot import Scs0009PyController
 
 from arm101_hand.config import load_hand_calibration, load_hand_config
 from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
-from arm101_hand.hand import compose_finger, degrees_to_servo_radians
+from arm101_hand.hand import compose_finger, degrees_to_servo_radians, wait_hand_reached
 from arm101_hand.hand.protocol import SERVO_SYNC_S
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -38,11 +39,21 @@ _FINGERS = _cfg.fingers
 MaxSpeed = _hcfg.tuning.speeds.open  # extension (quicker)
 CloseSpeed = _hcfg.tuning.speeds.close  # flexion (gentler settle)
 
+# Position-poll params (confirm arrival before each observation dwell).
+_TOL_RAD = math.radians(_hcfg.tuning.pose_margin_deg)
+_TIMEOUT_S = _hcfg.tuning.pose_timeout_s
+_POLL_S = _hcfg.tuning.pose_poll_s
+
 c = Scs0009PyController(
     serial_port=_hcfg.connection.port,
     baudrate=_hcfg.connection.baudrate,
     timeout=_hcfg.connection.timeout,
 )
+
+
+def _wait(targets):
+    """Poll until the just-commanded servos arrive (or timeout); caller keeps its dwell."""
+    wait_hand_reached(c, targets, tolerance_rad=_TOL_RAD, timeout_s=_TIMEOUT_S, poll_s=_POLL_S)
 
 
 # ---------- per-finger motion helpers ----------
@@ -58,9 +69,11 @@ def _move(name, base, side, speed):
     time.sleep(SERVO_SYNC_S)
     c.write_goal_speed(id2, speed)
     time.sleep(SERVO_SYNC_S)
-    c.write_goal_position(id1, degrees_to_servo_radians(id1, pos1, mp1))
-    c.write_goal_position(id2, degrees_to_servo_radians(id2, pos2, mp2))
-    time.sleep(0.005)
+    rad1 = degrees_to_servo_radians(id1, pos1, mp1)
+    rad2 = degrees_to_servo_radians(id2, pos2, mp2)
+    c.write_goal_position(id1, rad1)
+    c.write_goal_position(id2, rad2)
+    return {id1: rad1, id2: rad2}
 
 
 def _limits(name):
@@ -68,19 +81,19 @@ def _limits(name):
 
 
 def Move_Index(base, side, speed):  # noqa: N802
-    _move("index", base, side, speed)
+    return _move("index", base, side, speed)
 
 
 def Move_Middle(base, side, speed):  # noqa: N802
-    _move("middle", base, side, speed)
+    return _move("middle", base, side, speed)
 
 
 def Move_Ring(base, side, speed):  # noqa: N802
-    _move("ring", base, side, speed)
+    return _move("ring", base, side, speed)
 
 
 def Move_Thumb(base, side, speed):  # noqa: N802
-    _move("thumb", base, side, speed)
+    return _move("thumb", base, side, speed)
 
 
 _MOVERS = {
@@ -110,33 +123,40 @@ def _spread_pose(name, frac):
 
 
 def InitialPose():  # noqa: N802
+    targets = {}
     for name, mover in _MOVERS.items():
-        mover(*_open(name), MaxSpeed)
+        targets.update(mover(*_open(name), MaxSpeed))
+    return targets
 
 
 def OpenHand():  # noqa: N802
+    targets = {}
     for name, mover in _MOVERS.items():
-        mover(*_open(name), MaxSpeed)
+        targets.update(mover(*_open(name), MaxSpeed))
+    return targets
 
 
 def CloseHand():  # noqa: N802
+    targets = {}
     for name, mover in _MOVERS.items():
-        mover(*_close(name), CloseSpeed)
+        targets.update(mover(*_close(name), CloseSpeed))
+    return targets
 
 
 def _isolate(active):
     # Close every finger except ``active``, which sweeps its spread range.
+    targets = {}
     for name, mover in _MOVERS.items():
         if name != active:
-            mover(*_close(name), MaxSpeed)
-    mover = _MOVERS[active]
-    mover(*_open(active), MaxSpeed)
+            targets.update(mover(*_close(name), MaxSpeed))
+    targets.update(_MOVERS[active](*_open(active), MaxSpeed))
+    _wait(targets)
     time.sleep(0.6)
-    mover(*_spread_pose(active, 1.0), MaxSpeed)
+    _wait(_MOVERS[active](*_spread_pose(active, 1.0), MaxSpeed))
     time.sleep(0.4)
-    mover(*_spread_pose(active, -1.0), MaxSpeed)
+    _wait(_MOVERS[active](*_spread_pose(active, -1.0), MaxSpeed))
     time.sleep(0.4)
-    mover(*_open(active), MaxSpeed)
+    _wait(_MOVERS[active](*_open(active), MaxSpeed))
 
 
 def IndexOnly():  # noqa: N802
@@ -163,10 +183,10 @@ def main():
 
     print("Running AmazingHand full-hand demo (right hand, one cycle)...")
     try:
-        CloseHand()
+        _wait(CloseHand())
         time.sleep(2)
 
-        OpenHand()
+        _wait(OpenHand())
         time.sleep(1)
 
         IndexOnly()
@@ -181,7 +201,7 @@ def main():
         ThumbOnly()
         time.sleep(1.5)
 
-        InitialPose()
+        _wait(InitialPose())
         time.sleep(1)
         print("Cycle complete -- holding middle (initial) pose under torque.")
         input("Press Enter to release torque and exit... ")
