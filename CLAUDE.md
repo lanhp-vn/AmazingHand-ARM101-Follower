@@ -22,7 +22,7 @@ Full text in `docs/conventions/00-iron-laws.md`. Read that file before editing.
 - **IL-2 — `references/` is read-only.** Five vendored submodules (lerobot, AmazingHand, FeetechServo, rustypot, FTServo_Python). Adapt by transferring into `src/` or `scripts/`.
 - **IL-3 — Motor ID canon.** Hand: IDs 1–8 (odd-right/even-left per finger). Arm: IDs 1–5 shoulder→wrist. **ID 6 is physically absent on the arm.**
 - **IL-4 — COM-port discipline.** Single owner per bus. Close FD.exe / serial monitors / stale Python sessions before opening.
-- **IL-5 — Calibration in version control, in-tree only.** Hand: `scripts/calibration/amazing_hand/hand_calib_values.yaml`. Arm: `scripts/calibration/so_arm101/<id>.json` — the `SO101FollowerNoGripperConfig` subclass defaults `calibration_dir` to that path so `~/.cache/huggingface/lerobot/...` is never written to.
+- **IL-5 — Project state in version control, in-tree only.** Calibration — Hand: `scripts/calibration/amazing_hand/hand_calib_values.yaml`. Arm: `scripts/calibration/so_arm101/<id>.json` — the `SO101FollowerNoGripperConfig` subclass defaults `calibration_dir` to that path so `~/.cache/huggingface/lerobot/...` is never written to. Runtime operator config (connection/safety/tuning/poses) — `src/arm101_hand/data/{arm,hand}_config.yaml`.
 - **IL-6 — Atomic cross-device commits.** Changes touching both arm and hand ship in one commit.
 - **IL-7 — Documentation is single-source-of-truth.** One canonical home per fact; pointers everywhere else.
 
@@ -36,11 +36,12 @@ AmazingHand-ARM101-Follower/
 ├── src/arm101_hand/
 │   ├── robots/                # device layer — SO-ARM101 subclass
 │   ├── hand/                  # device layer — rustypot kinematics, pose-jog + range-calib state machines
-│   ├── config/                # primitive layer — pydantic schemas (calibration v2, poses, app config)
+│   ├── config/                # primitive layer — pydantic schemas (arm_config, hand_config, calibration, motor_ids)
+│   ├── data/                  # runtime operator config: arm_config.yaml + hand_config.yaml (+ README)
 │   └── scripts/               # application layer — console-script entries + shared device_setup
 ├── scripts/
 │   ├── calibration/
-│   │   ├── amazing_hand/      # snake_case calibration/test/jog scripts + YAML state (v2 schema)
+│   │   ├── amazing_hand/      # snake_case calibration/test/jog scripts + measurement-only YAML (v3 schema)
 │   │   └── so_arm101/         # follower calibration runner + sweep/set_pose/jog/capture_pose
 │   ├── diagnostics/           # dual-device scan/show_calib (--device arm|hand) + device-agnostic find_port
 │   ├── teleop/                # planned
@@ -67,7 +68,7 @@ uv run python scripts/calibration/amazing_hand/motor_reset.py
 uv run python scripts/calibration/amazing_hand/middle_calib.py
 uv run python scripts/calibration/amazing_hand/range_calib.py              # per-finger DOF limits
 uv run python scripts/calibration/amazing_hand/finger_test.py
-uv run python scripts/calibration/amazing_hand/jog.py                      # jog all fingers; save whole-hand pose to data/hand_config.yaml
+uv run python scripts/calibration/amazing_hand/jog.py                      # jog all fingers; save whole-hand pose to src/arm101_hand/data/hand_config.yaml
 
 # SO-ARM101 follower calibration (full procedure in scripts/calibration/so_arm101/README.md)
 # Output JSON lands at scripts/calibration/so_arm101/<id>.json (subclass default).
@@ -85,7 +86,7 @@ uv run python scripts/diagnostics/show_calib.py --device arm [--live]     # dump
 # Per-script detail in scripts/calibration/so_arm101/README.md §6.
 uv run python scripts/calibration/so_arm101/sweep.py <joint|all>          # range-verify sweep to endpoints (--margin 90)
 uv run python scripts/calibration/so_arm101/set_pose.py home              # drive to a poses entry (home = folded storage), hold
-uv run python scripts/calibration/so_arm101/jog.py                       # interactive keyboard jog; saves poses to data/arm_config.yaml
+uv run python scripts/calibration/so_arm101/jog.py                       # interactive keyboard jog; saves poses to src/arm101_hand/data/arm_config.yaml
 uv run python scripts/calibration/so_arm101/capture_pose.py               # hand-pose the arm by hand, capture present degrees, save as a pose
 
 # Lint / format / type-check / test
