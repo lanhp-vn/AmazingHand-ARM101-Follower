@@ -70,6 +70,11 @@ def _clamp(value: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, value))
 
 
+def _clamp_f(value: int, lo: float, hi: float) -> int:
+    """Clamp an int value to float bounds, returning int."""
+    return int(max(lo, min(hi, value)))
+
+
 @dataclass(frozen=True)
 class JogState:
     """Immutable jog cursor: where we are and how big each step is."""
@@ -84,26 +89,41 @@ def key_to_action(key: str) -> str | None:
     return _KEY_ACTIONS.get(key)
 
 
-def apply_action(state: JogState, action: str) -> tuple[JogState, tuple[str, int] | None]:
+def apply_action(
+    state: JogState,
+    action: str,
+    *,
+    step_min: int = STEP_MIN,
+    step_max: int = STEP_MAX,
+    jog_base_min: float = JOG_BASE_MIN,
+    jog_base_max: float = JOG_BASE_MAX,
+    jog_side_min: float = JOG_SIDE_MIN,
+    jog_side_max: float = JOG_SIDE_MAX,
+) -> tuple[JogState, tuple[str, int] | None]:
     """Apply an action to the cursor.
 
     Returns ``(new_state, mark)`` where ``mark`` is ``None`` except for the four
     mark actions, which return ``(limit_name, captured_value)`` and leave the
     cursor unchanged. ``home`` / ``save`` / ``quit`` are handled by the caller;
     here ``home`` resets the cursor and ``save``/``quit`` are no-ops on state.
+
+    The jog bounds default to the module-level constants so callers that do not
+    pass bounds (e.g. ``pose_jog``) keep working without change. Pass
+    ``step_min``/``step_max`` (``int``) and ``jog_base_*``/``jog_side_*``
+    (``float``) from ``hcfg.tuning`` to wire the config knobs.
     """
     if action == "base+":
-        return replace(state, base=_clamp(state.base + state.step, JOG_BASE_MIN, JOG_BASE_MAX)), None
+        return replace(state, base=_clamp_f(state.base + state.step, jog_base_min, jog_base_max)), None
     if action == "base-":
-        return replace(state, base=_clamp(state.base - state.step, JOG_BASE_MIN, JOG_BASE_MAX)), None
+        return replace(state, base=_clamp_f(state.base - state.step, jog_base_min, jog_base_max)), None
     if action == "side+":
-        return replace(state, side=_clamp(state.side + state.step, JOG_SIDE_MIN, JOG_SIDE_MAX)), None
+        return replace(state, side=_clamp_f(state.side + state.step, jog_side_min, jog_side_max)), None
     if action == "side-":
-        return replace(state, side=_clamp(state.side - state.step, JOG_SIDE_MIN, JOG_SIDE_MAX)), None
+        return replace(state, side=_clamp_f(state.side - state.step, jog_side_min, jog_side_max)), None
     if action == "step+":
-        return replace(state, step=_clamp(state.step + 1, STEP_MIN, STEP_MAX)), None
+        return replace(state, step=_clamp(state.step + 1, step_min, step_max)), None
     if action == "step-":
-        return replace(state, step=_clamp(state.step - 1, STEP_MIN, STEP_MAX)), None
+        return replace(state, step=_clamp(state.step - 1, step_min, step_max)), None
     if action == "home":
         return replace(state, base=0, side=0), None
     if action in _MARK_TARGETS:

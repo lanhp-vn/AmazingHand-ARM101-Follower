@@ -107,6 +107,14 @@ def main():
     c.write_torque_enable(id2, 1)
 
     state = JogState(step=hcfg.tuning.step_default)
+    jog_bounds = {
+        "step_min": hcfg.tuning.step_min,
+        "step_max": hcfg.tuning.step_max,
+        "jog_base_min": hcfg.tuning.jog_base_min,
+        "jog_base_max": hcfg.tuning.jog_base_max,
+        "jog_side_min": hcfg.tuning.jog_side_min,
+        "jog_side_max": hcfg.tuning.jog_side_max,
+    }
     print(__doc__)
     print(f"[finger={finger}, ID_1={id1}, ID_2={id2}] current limits: {limits}")
     write_cursor(c, id1, id2, mp1, mp2, state, speed)
@@ -129,7 +137,7 @@ def main():
                     print(f"  saved limits {limits} for {finger}")
                 continue
 
-            state, mark = apply_action(state, action)
+            state, mark = apply_action(state, action, **jog_bounds)
             if mark is not None:
                 name, value = mark
                 limits[name] = value
