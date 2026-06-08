@@ -1,31 +1,67 @@
+# hand_config.yaml -- AmazingHand operator config (single tuning surface).
+# connection/safety/tuning are hand-editable; 'poses' is written by jog.py.
+# Comments are regenerated on save -- see data/README.md for knob meanings.
 schema_version: 1
 connection:
   port: COM18
   baudrate: 1000000
   timeout: 0.5
 safety:
-  temp_warn_c: 50
+  temp_warn_c: 50.0
   voltage_warn_pct: 5.0
 tuning:
-  speed: 4
-  speeds: {open: 5, close: 3}
+  speed: 3
+  speeds:
+    open: 3
+    close: 3
   step_min: 1
   step_max: 15
   step_default: 5
   pose_margin_deg: 5.0
+  pose_timeout_s: 2.0
+  pose_poll_s: 0.03
   load_warn_threshold: 80
-  jog_base_min: -60
-  jog_base_max: 130
-  jog_side_min: -60
-  jog_side_max: 60
+  jog_base_min: -60.0
+  jog_base_max: 130.0
+  jog_side_min: -60.0
+  jog_side_max: 60.0
 poses:
   middle:
-    index: [0, 0]
-    middle: [0, 0]
-    ring: [0, 0]
-    thumb: [0, 0]
+    index:
+    - 0
+    - 0
+    middle:
+    - 0
+    - 0
+    ring:
+    - 0
+    - 0
+    thumb:
+    - 0
+    - 0
   grab:
-    index: [70, 2]
-    middle: [59, -19]
-    ring: [64, -14]
-    thumb: [59, -59]
+    index:
+    - 70
+    - 2
+    middle:
+    - 59
+    - -19
+    ring:
+    - 64
+    - -14
+    thumb:
+    - 59
+    - -59
+  pre_grab:
+    index:
+    - -15
+    - 15
+    middle:
+    - -30
+    - 30
+    ring:
+    - -4
+    - 40
+    thumb:
+    - 20
+    - 40

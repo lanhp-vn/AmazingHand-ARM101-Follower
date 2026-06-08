@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from arm101_hand.config import HandConfig, load_hand_config, save_hand_config
+from arm101_hand.config.hand_config import HandTuning
 
 
 def test_defaults():
@@ -39,3 +40,16 @@ def test_extra_key_rejected(tmp_path: Path):
     out.write_text("schema_version: 1\nbogus: true\n", encoding="utf-8")
     with pytest.raises(ValidationError):
         load_hand_config(out)
+
+
+def test_pose_poll_knobs_default():
+    t = HandTuning()
+    assert t.pose_timeout_s == 2.0
+    assert t.pose_poll_s == 0.03
+
+
+def test_pose_poll_knobs_reject_nonpositive():
+    with pytest.raises(ValidationError):
+        HandTuning(pose_timeout_s=0)
+    with pytest.raises(ValidationError):
+        HandTuning(pose_poll_s=0)

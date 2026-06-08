@@ -46,6 +46,12 @@ class HandTuning(BaseModel):
     step_max: int = Field(default=15, ge=1, description="max jog step (deg)")
     step_default: int = Field(default=5, ge=1, description="initial jog step (deg)")
     pose_margin_deg: float = Field(default=5.0, ge=0, description="open/close back-off from limits (deg)")
+    pose_timeout_s: float = Field(
+        default=2.0, gt=0, description="hand move position-poll timeout (s) before continuing"
+    )
+    pose_poll_s: float = Field(
+        default=0.03, gt=0, description="hand move position-poll interval (s)"
+    )
     load_warn_threshold: int = Field(default=80, ge=0, le=100, description="SCS0009 load %% duty warn")
     jog_base_min: float = Field(default=-60, description="range_calib base discovery floor (logical deg)")
     jog_base_max: float = Field(default=130, description="range_calib base discovery ceil (logical deg)")

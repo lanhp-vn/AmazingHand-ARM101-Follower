@@ -55,6 +55,8 @@ poses:        # named poses written by jog.py / capture_pose.py
 | `step_max` | 15° | Maximum jog step size |
 | `step_default` | 5° | Initial jog step on startup |
 | `pose_margin_deg` | 5.0° | Back-off from calibrated limits when driving to open/close pose |
+| `pose_timeout_s` | 2.0 s | Seconds to wait for a hand move to position-confirm before continuing (a gripping close that stalls on an object simply times out and continues) |
+| `pose_poll_s` | 0.03 s | Interval between `read_present_position` polls while waiting for a hand move to arrive |
 | `load_warn_threshold` | 80 | SCS0009 load % duty warn level (0–100) |
 | `jog_base_min` | −60° | range_calib base-DOF discovery floor (logical deg) |
 | `jog_base_max` | 130° | range_calib base-DOF discovery ceiling (logical deg) |
