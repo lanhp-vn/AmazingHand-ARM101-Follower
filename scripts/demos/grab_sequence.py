@@ -16,7 +16,7 @@ through.
 
 Poses come from version-controlled config (IL-5; never written here):
   * arm  -> data/arm_config.yaml ``poses['grab']``
-  * hand -> data/hand_config.yaml ``poses['grab']``
+  * hand -> src/arm101_hand/data/hand_config.yaml ``poses['grab']``
 
 Usage:
   uv run python scripts/demos/grab_sequence.py
@@ -31,7 +31,7 @@ from pathlib import Path
 
 from rustypot import Scs0009PyController
 
-from arm101_hand.config import load_arm_poses, load_hand_calibration, load_hand_poses
+from arm101_hand.config import load_arm_poses, load_hand_calibration, load_hand_config
 from arm101_hand.hand import resolve_hand_pose_targets
 from arm101_hand.robots.calibration_summary import ARM_JOINTS, clamp_degrees, load_arm_calibration
 from arm101_hand.scripts.device_setup import (
@@ -47,7 +47,7 @@ from arm101_hand.scripts.device_setup import (
 # scripts/demos/grab_sequence.py -> repo root is parents[2].
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 HAND_CALIB_PATH = _REPO_ROOT / "scripts" / "calibration" / "amazing_hand" / "hand_calib_values.yaml"
-HAND_CONFIG_PATH = _REPO_ROOT / "data" / "hand_config.yaml"
+HAND_CONFIG_PATH = _REPO_ROOT / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 
 ARM_POSE = "grab"
 HAND_POSE = "grab"
@@ -92,12 +92,12 @@ def main() -> int:
     arm_targets = _build_arm_targets()
 
     hand_calib = load_hand_calibration(HAND_CALIB_PATH)
-    hand_poses = load_hand_poses(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else None
-    if hand_poses is None or HAND_POSE not in hand_poses.poses:
+    hand_cfg = load_hand_config(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else None
+    if hand_cfg is None or HAND_POSE not in hand_cfg.poses:
         raise SystemExit(f"hand pose {HAND_POSE!r} not in {HAND_CONFIG_PATH} (poses)")
-    hand_targets = resolve_hand_pose_targets(hand_calib, hand_poses, HAND_POSE)
+    hand_targets = resolve_hand_pose_targets(hand_calib, hand_cfg, HAND_POSE)
     # Open targets are built-in (limits-derived); used only if the user homes on exit.
-    hand_open_targets = resolve_hand_pose_targets(hand_calib, hand_poses, "open")
+    hand_open_targets = resolve_hand_pose_targets(hand_calib, hand_cfg, "open")
 
     cfg = load_arm_app_config()
     follower = build_follower(cfg, use_degrees=True)  # DEGREES
@@ -105,15 +105,15 @@ def main() -> int:
     home = load_home_degrees()
 
     hand = Scs0009PyController(
-        serial_port=hand_calib.com_port,
-        baudrate=hand_calib.baudrate,
-        timeout=hand_calib.timeout,
+        serial_port=hand_cfg.connection.port,
+        baudrate=hand_cfg.connection.baudrate,
+        timeout=hand_cfg.connection.timeout,
     )
 
     def _open_hand_on_home() -> None:
         """Bring the hand to 'open' when the user chooses to home the arm on exit."""
-        print(f"Opening hand to 'open' on {hand_calib.com_port} ...")
-        _drive_hand(hand, hand_open_targets, hand_calib.speeds.open)
+        print(f"Opening hand to 'open' on {hand_cfg.connection.port} ...")
+        _drive_hand(hand, hand_open_targets, hand_cfg.tuning.speeds.open)
         time.sleep(_HAND_SETTLE_S)
 
     arm_torque_on = False
@@ -134,8 +134,8 @@ def main() -> int:
         print(f"Arm holding '{ARM_POSE}': {arm_targets}")
 
         # ---- Hand leg: close into grab ----
-        print(f"Driving hand on {hand_calib.com_port} to '{HAND_POSE}' ...")
-        _drive_hand(hand, hand_targets, hand_calib.speed)
+        print(f"Driving hand on {hand_cfg.connection.port} to '{HAND_POSE}' ...")
+        _drive_hand(hand, hand_targets, hand_cfg.tuning.speed)
         time.sleep(_HAND_SETTLE_S)
         print(f"Arm + hand holding '{ARM_POSE}'/'{HAND_POSE}' under torque.")
     except (EOFError, KeyboardInterrupt):

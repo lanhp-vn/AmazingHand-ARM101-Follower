@@ -22,7 +22,8 @@ from pathlib import Path
 
 from rustypot import Scs0009PyController
 
-from arm101_hand.config import DofLimits, load_hand_calibration, save_hand_calibration
+from arm101_hand.config import DofLimits, load_hand_calibration, load_hand_config, save_hand_calibration
+from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
 from arm101_hand.hand import (
     apply_action,
     compose_finger,
@@ -35,12 +36,13 @@ from arm101_hand.hand.range_calib import JogState
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 YAML_PATH = SCRIPT_DIR / "hand_calib_values.yaml"
+HAND_CONFIG_PATH = SCRIPT_DIR.parents[2] / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 
 VALID_FINGERS = ("index", "middle", "ring", "thumb")
 
 
 def limits_error(limits):
-    """Return an error string if the limit set violates v2 ordering, else None."""
+    """Return an error string if the limit set violates v3 ordering, else None."""
     errs = []
     if limits["base_min"] >= limits["base_max"]:
         errs.append(f"base_min ({limits['base_min']}) >= base_max ({limits['base_max']})")
@@ -86,24 +88,25 @@ def read_loads(c, id1, id2):
 
 def main():
     cfg = load_hand_calibration(YAML_PATH)
+    hcfg = load_hand_config(HAND_CONFIG_PATH)
     finger = prompt_finger()
     block = cfg.fingers[finger]
-    id1 = block.servo_1.id
-    id2 = block.servo_2.id
+    id1, id2 = FINGER_SERVO_IDS[finger]
     mp1 = block.servo_1.middle_pos
     mp2 = block.servo_2.middle_pos
-    speed = cfg.speed
+    speed = hcfg.tuning.speed
+    load_warn_threshold = hcfg.tuning.load_warn_threshold
     limits = block.limits.model_dump()  # working dict; start from current stored limits
 
     c = Scs0009PyController(
-        serial_port=cfg.com_port,
-        baudrate=cfg.baudrate,
-        timeout=cfg.timeout,
+        serial_port=hcfg.connection.port,
+        baudrate=hcfg.connection.baudrate,
+        timeout=hcfg.connection.timeout,
     )
     c.write_torque_enable(id1, 1)
     c.write_torque_enable(id2, 1)
 
-    state = JogState()
+    state = JogState(step=hcfg.tuning.step_default)
     print(__doc__)
     print(f"[finger={finger}, ID_1={id1}, ID_2={id2}] current limits: {limits}")
     write_cursor(c, id1, id2, mp1, mp2, state, speed)
@@ -136,7 +139,7 @@ def main():
 
             load1, load2 = read_loads(c, id1, id2)
             print("  " + format_status(state, load1, load2))
-            warn = load_warning(load1, load2)
+            warn = load_warning(load1, load2, threshold=load_warn_threshold)
             if warn:
                 print("  " + warn)
     except KeyboardInterrupt:

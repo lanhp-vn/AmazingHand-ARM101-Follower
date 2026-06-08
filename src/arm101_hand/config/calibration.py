@@ -5,6 +5,10 @@ via :func:`save_hand_calibration`. The calibration and diagnostic scripts consum
 the per-servo ``middle_pos`` (for calibration-aware logical↔servo math, see
 ``hand/kinematics.degrees_to_servo_radians``) and the per-finger DOF ``limits``
 (``base``/``side`` min/max, logical frame) that bound motion.
+
+This file holds **measurement-only** values (middle_pos + limits). Connection
+settings and speed/pose tuning live in ``hand_config.yaml`` (v3 schema). Motor
+IDs come from :data:`FINGER_SERVO_IDS` (IL-3 code canon).
 """
 
 from __future__ import annotations
@@ -15,18 +19,9 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# Canonical finger labels, per IL-3. The first finger ("index") is the pointer
-# finger; the schema-level name stays "index".
-FINGER_NAMES = ("index", "middle", "ring", "thumb")
-
-
-class PoseSpeeds(BaseModel):
-    """SetPose's open/close motion speeds (1-7 scale), distinct from the jog ``speed``."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    open: int = Field(default=5, ge=1, le=7)  # extension (quicker)
-    close: int = Field(default=3, ge=1, le=7)  # flexion (gentler settle)
+# Re-export for back-compat — callers that did ``from arm101_hand.config.calibration import FINGER_NAMES``
+# continue to work after the canonical definitions moved to motor_ids.
+from arm101_hand.config.motor_ids import FINGER_NAMES, FINGER_SERVO_IDS  # noqa: F401
 
 
 class DofLimits(BaseModel):
@@ -54,11 +49,10 @@ class DofLimits(BaseModel):
 
 
 class ServoCalibration(BaseModel):
-    """One SCS0009 servo's calibrated neutral."""
+    """One SCS0009 servo's calibrated neutral (measurement-only; ID comes from FINGER_SERVO_IDS)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: int = Field(ge=1, le=8)
     middle_pos: float
 
 
@@ -73,24 +67,26 @@ class FingerCalibration(BaseModel):
 
 
 class HandCalibration(BaseModel):
-    """Top-level shape of ``hand_calib_values.yaml`` (v2)."""
+    """Top-level shape of ``hand_calib_values.yaml`` (v3).
+
+    Holds measurement-only values: per-servo ``middle_pos`` and per-finger DOF
+    ``limits``. Connection settings (com_port/baudrate/timeout) and motion-speed
+    knobs live in ``hand_config.yaml``. Motor IDs come from ``FINGER_SERVO_IDS``
+    (IL-3 code canon) rather than being stored here.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = Field(ge=2)
-    com_port: str
-    baudrate: int = Field(ge=9600)
-    timeout: float = Field(ge=0.0, le=5.0)
-    speed: int = Field(ge=1, le=7)
-    speeds: PoseSpeeds = Field(default_factory=PoseSpeeds)
+    schema_version: int = Field(ge=3)
     fingers: dict[str, FingerCalibration]
 
     def middle_pos_by_id(self) -> dict[int, float]:
-        """Flat ``{servo_id: middle_pos}`` lookup for the controller layer."""
+        """Flat ``{servo_id: middle_pos}`` lookup; IDs from FINGER_SERVO_IDS (IL-3 canon)."""
         out: dict[int, float] = {}
-        for finger in self.fingers.values():
-            out[finger.servo_1.id] = finger.servo_1.middle_pos
-            out[finger.servo_2.id] = finger.servo_2.middle_pos
+        for name, finger in self.fingers.items():
+            id1, id2 = FINGER_SERVO_IDS[name]
+            out[id1] = finger.servo_1.middle_pos
+            out[id2] = finger.servo_2.middle_pos
         return out
 
     def limits_by_finger(self) -> dict[str, DofLimits]:

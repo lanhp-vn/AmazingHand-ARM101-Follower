@@ -22,7 +22,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from arm101_hand.config import load_hand_calibration
+from arm101_hand.config import load_hand_calibration, load_hand_config
+from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
 from arm101_hand.hand import compose_finger, degrees_to_servo_radians
 
 CALIBRATION_PATH = (
@@ -34,6 +35,7 @@ CALIBRATION_PATH = (
     / "amazing_hand"
     / "hand_calib_values.yaml"
 )
+HAND_CONFIG_PATH = Path(__file__).resolve().parents[2] / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 ARRIVAL_TOLERANCE_DEG = 3.0
 ARRIVAL_TIMEOUT_S = 4.0
 
@@ -47,8 +49,13 @@ def test_hand_connect_poll_nudge(port: str) -> None:
     from rustypot import Scs0009PyController
 
     cfg = load_hand_calibration(CALIBRATION_PATH)
-    all_ids = [s for b in cfg.fingers.values() for s in (b.servo_1.id, b.servo_2.id)]
-    c = Scs0009PyController(serial_port=port, baudrate=cfg.baudrate, timeout=cfg.timeout)
+    hcfg = load_hand_config(HAND_CONFIG_PATH)
+    all_ids = [sid for finger_name in FINGER_SERVO_IDS for sid in FINGER_SERVO_IDS[finger_name]]
+    c = Scs0009PyController(
+        serial_port=port,
+        baudrate=hcfg.connection.baudrate,
+        timeout=hcfg.connection.timeout,
+    )
     try:
         for sid in all_ids:
             c.write_torque_enable(sid, 1)
@@ -57,7 +64,7 @@ def test_hand_connect_poll_nudge(port: str) -> None:
             assert c.read_present_position(sid) is not None, f"servo {sid} did not respond"
 
         block = cfg.fingers["index"]
-        s1, s2 = block.servo_1, block.servo_2
+        s1_id, s2_id = FINGER_SERVO_IDS["index"]
         lim = block.limits
 
         def drive(base: float) -> None:
@@ -69,16 +76,16 @@ def test_hand_connect_poll_nudge(port: str) -> None:
                 side_min=lim.side_min,
                 side_max=lim.side_max,
             )
-            c.write_goal_speed(s1.id, cfg.speed)
-            c.write_goal_speed(s2.id, cfg.speed)
-            c.write_goal_position(s1.id, degrees_to_servo_radians(s1.id, pos1, s1.middle_pos))
-            c.write_goal_position(s2.id, degrees_to_servo_radians(s2.id, pos2, s2.middle_pos))
+            c.write_goal_speed(s1_id, hcfg.tuning.speed)
+            c.write_goal_speed(s2_id, hcfg.tuning.speed)
+            c.write_goal_position(s1_id, degrees_to_servo_radians(s1_id, pos1, block.servo_1.middle_pos))
+            c.write_goal_position(s2_id, degrees_to_servo_radians(s2_id, pos2, block.servo_2.middle_pos))
 
         target = min(5.0, lim.base_max)
         drive(target)
         deadline = time.monotonic() + ARRIVAL_TIMEOUT_S
         while time.monotonic() < deadline:
-            deg = float(np.rad2deg(_scalar(c.read_present_position(s1.id)))) - s1.middle_pos
+            deg = float(np.rad2deg(_scalar(c.read_present_position(s1_id)))) - block.servo_1.middle_pos
             if abs(deg - target) <= ARRIVAL_TOLERANCE_DEG:
                 break
             time.sleep(0.05)

@@ -1,11 +1,12 @@
 """AmazingHand Jog & Save-Pose tool -- arrow-key jog of all fingers, then save.
 
 Move all four fingers with the keyboard (torque ON the whole time), then save the
-resulting whole-hand pose by name into ``data/hand_config.yaml``. Mirrors the arm's
-``so_arm101/jog.py``.
+resulting whole-hand pose by name into ``src/arm101_hand/data/hand_config.yaml``.
+Mirrors the arm's ``so_arm101/jog.py``.
 
 Config (serial + per-finger middle_pos + limits) is read from the canonical
 ``hand_calib_values.yaml`` (IL-5: this script never writes it).
+Connection, speed, and pose storage live in ``hand_config.yaml``.
 
 Controls (torque ON the whole time):
   1 2 3 4       select active finger (index / middle / ring / thumb)
@@ -31,12 +32,13 @@ from pathlib import Path
 from rustypot import Scs0009PyController
 
 from arm101_hand.config import (
+    HandConfig,
     HandPose,
-    HandPoseConfig,
     load_hand_calibration,
-    load_hand_poses,
-    save_hand_poses,
+    load_hand_config,
+    save_hand_config,
 )
+from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
 from arm101_hand.hand import (
     compose_finger,
     decompose_finger,
@@ -58,7 +60,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 YAML_PATH = SCRIPT_DIR / "hand_calib_values.yaml"
 # scripts/calibration/amazing_hand/jog.py -> repo root is parents[2].
 REPO_ROOT = SCRIPT_DIR.parents[2]
-HAND_CONFIG_PATH = REPO_ROOT / "data" / "hand_config.yaml"
+HAND_CONFIG_PATH = REPO_ROOT / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 
 
 def read_key():
@@ -94,16 +96,16 @@ def hold_present_and_read_state(c, cfg):
     for name in FINGERS:
         block = cfg.fingers[name]
         lim = block.limits
-        s1, s2 = block.servo_1, block.servo_2
-        rad1 = float(_scalar(c.read_present_position(s1.id)))
-        rad2 = float(_scalar(c.read_present_position(s2.id)))
+        id1, id2 = FINGER_SERVO_IDS[name]
+        rad1 = float(_scalar(c.read_present_position(id1)))
+        rad2 = float(_scalar(c.read_present_position(id2)))
         # No-jump hold: command present, then enable torque.
-        c.write_goal_position(s1.id, rad1)
-        c.write_goal_position(s2.id, rad2)
-        c.write_torque_enable(s1.id, 1)
-        c.write_torque_enable(s2.id, 1)
-        pos1 = servo_radians_to_degrees(s1.id, rad1, s1.middle_pos)
-        pos2 = servo_radians_to_degrees(s2.id, rad2, s2.middle_pos)
+        c.write_goal_position(id1, rad1)
+        c.write_goal_position(id2, rad2)
+        c.write_torque_enable(id1, 1)
+        c.write_torque_enable(id2, 1)
+        pos1 = servo_radians_to_degrees(id1, rad1, block.servo_1.middle_pos)
+        pos2 = servo_radians_to_degrees(id2, rad2, block.servo_2.middle_pos)
         base, side = decompose_finger(
             round(pos1),
             round(pos2),
@@ -116,9 +118,10 @@ def hold_present_and_read_state(c, cfg):
     return HandJogState(fingers=fingers)
 
 
-def drive_finger(c, block, base, side, speed):
+def drive_finger(c, finger_name, block, base, side, speed):
     """Command one finger's two servos to (base, side), clamped to its limits."""
     lim = block.limits
+    id1, id2 = FINGER_SERVO_IDS[finger_name]
     pos1, pos2 = compose_finger(
         base,
         side,
@@ -127,30 +130,25 @@ def drive_finger(c, block, base, side, speed):
         side_min=lim.side_min,
         side_max=lim.side_max,
     )
-    c.write_goal_speed(block.servo_1.id, speed)
-    c.write_goal_speed(block.servo_2.id, speed)
-    c.write_goal_position(
-        block.servo_1.id, degrees_to_servo_radians(block.servo_1.id, pos1, block.servo_1.middle_pos)
-    )
-    c.write_goal_position(
-        block.servo_2.id, degrees_to_servo_radians(block.servo_2.id, pos2, block.servo_2.middle_pos)
-    )
+    c.write_goal_speed(id1, speed)
+    c.write_goal_speed(id2, speed)
+    c.write_goal_position(id1, degrees_to_servo_radians(id1, pos1, block.servo_1.middle_pos))
+    c.write_goal_position(id2, degrees_to_servo_radians(id2, pos2, block.servo_2.middle_pos))
 
 
-def snapshot_positions(cfg, state):
-    """Whole-hand (base, side) cursor -> 8-int servo-frame positions array."""
+def snapshot_pose(cfg, state):
+    """Whole-hand (base, side) cursor -> per-finger HandPose (servo-frame degrees)."""
     # Cursor == live hardware position (torque is always ON), so no present-pos read needed.
-    out = [0] * 8
+    finger_data: dict[str, list[int]] = {}
     for name in FINGERS:
-        block = cfg.fingers[name]
+        id1, id2 = FINGER_SERVO_IDS[name]
         base, side = state.fingers[name]
-        odd_val, even_val = finger_positions_to_servo_frame(block.servo_1.id, block.servo_2.id, base, side)
-        out[block.servo_1.id - 1] = odd_val
-        out[block.servo_2.id - 1] = even_val
-    return out
+        odd_val, even_val = finger_positions_to_servo_frame(id1, id2, base, side)
+        finger_data[name] = [odd_val, even_val]
+    return HandPose(**finger_data)
 
 
-def maybe_save(cfg, poses_cfg, state):
+def maybe_save(cfg, hcfg, state):
     name = input("Save pose as (name, blank = cancel): ").strip()
     if not name:
         print("  (not saved)")
@@ -159,21 +157,21 @@ def maybe_save(cfg, poses_cfg, state):
     if not ok:
         print(f"  invalid name: {err}")
         return
-    poses_cfg.poses[name] = HandPose(positions=snapshot_positions(cfg, state))
-    save_hand_poses(HAND_CONFIG_PATH, poses_cfg)
+    hcfg.poses[name] = snapshot_pose(cfg, state)
+    save_hand_config(HAND_CONFIG_PATH, hcfg)
     print(f"  saved pose '{name}' -> {HAND_CONFIG_PATH}")
 
 
 def main():
     cfg = load_hand_calibration(YAML_PATH)
-    poses_cfg = load_hand_poses(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else HandPoseConfig()
+    hcfg: HandConfig = load_hand_config(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else HandConfig()
     limits_by_finger = cfg.limits_by_finger()
-    all_ids = [s for block in cfg.fingers.values() for s in (block.servo_1.id, block.servo_2.id)]
+    all_ids = [sid for name in FINGERS for sid in FINGER_SERVO_IDS[name]]
 
     c = Scs0009PyController(
-        serial_port=cfg.com_port,
-        baudrate=cfg.baudrate,
-        timeout=cfg.timeout,
+        serial_port=hcfg.connection.port,
+        baudrate=hcfg.connection.baudrate,
+        timeout=hcfg.connection.timeout,
     )
     print(__doc__)
     try:
@@ -187,7 +185,7 @@ def main():
             if action == "quit":
                 break
             if action == "save":
-                maybe_save(cfg, poses_cfg, state)
+                maybe_save(cfg, hcfg, state)
                 continue
 
             state = apply_action(state, action, limits_by_finger)
@@ -195,13 +193,13 @@ def main():
             if action == "home_all":
                 for name in FINGERS:
                     base, side = state.fingers[name]
-                    drive_finger(c, cfg.fingers[name], base, side, cfg.speed)
+                    drive_finger(c, name, cfg.fingers[name], base, side, hcfg.tuning.speed)
             else:
                 base, side = state.fingers[state.active]
-                drive_finger(c, cfg.fingers[state.active], base, side, cfg.speed)
+                drive_finger(c, state.active, cfg.fingers[state.active], base, side, hcfg.tuning.speed)
 
-            block = cfg.fingers[state.active]
-            load1, load2 = read_loads(c, block.servo_1.id, block.servo_2.id)
+            id1, id2 = FINGER_SERVO_IDS[state.active]
+            load1, load2 = read_loads(c, id1, id2)
             print("  " + format_hand_status(state))
             warn = load_warning(load1, load2)
             if warn:
@@ -225,7 +223,7 @@ def main():
             # Guarded so a homing failure can't skip the torque-off below (IL-4).
             try:
                 for name in FINGERS:
-                    drive_finger(c, cfg.fingers[name], 0, 0, cfg.speed)
+                    drive_finger(c, name, cfg.fingers[name], 0, 0, hcfg.tuning.speed)
                 time.sleep(1.0)  # let the fingers reach neutral before torque-off
                 print("Homed all fingers to neutral.")
             except BaseException as e:  # incl. Ctrl+C during the settle -- must still cut torque

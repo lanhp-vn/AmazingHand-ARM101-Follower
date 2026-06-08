@@ -58,7 +58,7 @@ def _scan_arm() -> int:
             volt = bus.read("Present_Voltage", joint, normalize=False)
             temp = bus.read("Present_Temperature", joint, normalize=False)
             print(f"{joint:<14}{motor_id:>3}{model:>7}{pos:>9}{load:>7}{volt / 10:>6.1f}V{temp:>7}")
-            _warn(cfg, joint, temp, volt / 10, _ARM_NOMINAL_V)
+            _warn_arm(cfg, joint, temp, volt / 10)
     finally:
         if bus.is_connected:
             bus.disconnect(disable_torque=False)
@@ -67,21 +67,29 @@ def _scan_arm() -> int:
 
 
 def _scan_hand() -> int:
-    from _hand_paths import HAND_CALIB_PATH
+    from pathlib import Path
+
     from rustypot import Scs0009PyController
 
-    from arm101_hand.config import load_hand_calibration
+    from arm101_hand.config import load_hand_config
 
-    if not HAND_CALIB_PATH.is_file():
-        print(f"hand calibration not found at {HAND_CALIB_PATH}", file=sys.stderr)
+    # scripts/diagnostics/scan.py -> repo root is parents[2].
+    _repo_root = Path(__file__).resolve().parents[2]
+    hand_config_path = _repo_root / "src" / "arm101_hand" / "data" / "hand_config.yaml"
+
+    if not hand_config_path.is_file():
+        print(f"hand config not found at {hand_config_path}", file=sys.stderr)
         return 1
-    cfg = load_arm_app_config()  # safety thresholds (temp/voltage) live here.
-    hand = load_hand_calibration(HAND_CALIB_PATH)  # port/baud/timeout from the hand calib YAML.
-    print(f"Opening hand bus on {hand.com_port} (read-only) ...")
+    hcfg = load_hand_config(hand_config_path)
+    print(f"Opening hand bus on {hcfg.connection.port} (read-only) ...")
     try:
-        c = Scs0009PyController(serial_port=hand.com_port, baudrate=hand.baudrate, timeout=hand.timeout)
+        c = Scs0009PyController(
+            serial_port=hcfg.connection.port,
+            baudrate=hcfg.connection.baudrate,
+            timeout=hcfg.connection.timeout,
+        )
     except (ConnectionError, OSError) as e:
-        print(f"ERROR: could not open {hand.com_port}: {e}", file=sys.stderr)
+        print(f"ERROR: could not open {hcfg.connection.port}: {e}", file=sys.stderr)
         return 1
     missing: list[str] = []
     header = f"{'servo':>5}{'pos_deg':>9}{'load':>7}{'volt':>7}{'temp_c':>8}"
@@ -98,18 +106,29 @@ def _scan_hand() -> int:
             print(f"{sid:>5}{'(no response)':>31}")
             continue
         print(f"{sid:>5}{math.degrees(pos):>9.1f}{abs(int(load)):>7}{volt:>6.1f}V{temp:>7.0f}")
-        _warn(cfg, f"servo {sid}", temp, volt, _HAND_NOMINAL_V)
+        _warn_hand(hcfg, f"servo {sid}", temp, volt)
     return _report(missing, len(_HAND_SERVO_IDS))
 
 
-def _warn(cfg, label: str, temp: float, volt_v: float, nominal_v: float) -> None:
+def _warn_arm(cfg, label: str, temp: float, volt_v: float) -> None:
     if temp >= cfg.safety.temp_warn_c:
         print(f"  WARNING: {label} temp {temp:.0f}C >= warn threshold {cfg.safety.temp_warn_c}C")
-    dev_pct = abs(volt_v - nominal_v) / nominal_v * 100
+    dev_pct = abs(volt_v - _ARM_NOMINAL_V) / _ARM_NOMINAL_V * 100
     if dev_pct >= cfg.safety.voltage_warn_pct:
         print(
             f"  WARNING: {label} voltage {volt_v:.1f}V deviates {dev_pct:.1f}% "
-            f"from {nominal_v:.0f}V nominal (warn {cfg.safety.voltage_warn_pct}%)"
+            f"from {_ARM_NOMINAL_V:.0f}V nominal (warn {cfg.safety.voltage_warn_pct}%)"
+        )
+
+
+def _warn_hand(hcfg, label: str, temp: float, volt_v: float) -> None:
+    if temp >= hcfg.safety.temp_warn_c:
+        print(f"  WARNING: {label} temp {temp:.0f}C >= warn threshold {hcfg.safety.temp_warn_c}C")
+    dev_pct = abs(volt_v - _HAND_NOMINAL_V) / _HAND_NOMINAL_V * 100
+    if dev_pct >= hcfg.safety.voltage_warn_pct:
+        print(
+            f"  WARNING: {label} voltage {volt_v:.1f}V deviates {dev_pct:.1f}% "
+            f"from {_HAND_NOMINAL_V:.0f}V nominal (warn {hcfg.safety.voltage_warn_pct}%)"
         )
 
 

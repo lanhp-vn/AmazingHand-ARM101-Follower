@@ -9,8 +9,8 @@ import pytest
 from arm101_hand.config import (
     DofLimits,
     HandCalibration,
+    HandConfig,
     HandPose,
-    HandPoseConfig,
 )
 from arm101_hand.config.calibration import FingerCalibration, ServoCalibration
 from arm101_hand.hand.pose_resolver import (
@@ -27,19 +27,15 @@ _BASE_MAX = 100.0
 
 def _finger(id1: int, id2: int) -> FingerCalibration:
     return FingerCalibration(
-        servo_1=ServoCalibration(id=id1, middle_pos=_MIDDLE[id1]),
-        servo_2=ServoCalibration(id=id2, middle_pos=_MIDDLE[id2]),
+        servo_1=ServoCalibration(middle_pos=_MIDDLE[id1]),
+        servo_2=ServoCalibration(middle_pos=_MIDDLE[id2]),
         limits=DofLimits(base_min=_BASE_MIN, base_max=_BASE_MAX, side_min=-40.0, side_max=40.0),
     )
 
 
 def _calib() -> HandCalibration:
     return HandCalibration(
-        schema_version=2,
-        com_port="COM_TEST",
-        baudrate=1_000_000,
-        timeout=0.5,
-        speed=3,
+        schema_version=3,
         fingers={
             "index": _finger(1, 2),
             "middle": _finger(3, 4),
@@ -49,18 +45,27 @@ def _calib() -> HandCalibration:
     )
 
 
-def _poses(**named: list[int]) -> HandPoseConfig:
-    return HandPoseConfig(poses={name: HandPose(positions=arr) for name, arr in named.items()})
+def _poses(**named: list[int]) -> HandConfig:
+    """Build a HandConfig whose poses contain the given per-finger pair dicts.
+
+    Each value in ``named`` must be a list of 8 ints (flat, for back-compat with
+    the old test data). They are split into per-finger [servo_1, servo_2] pairs.
+    """
+    poses = {}
+    finger_order = ("index", "middle", "ring", "thumb")
+    for name, arr in named.items():
+        poses[name] = HandPose(**{finger_order[i]: [arr[i * 2], arr[i * 2 + 1]] for i in range(4)})
+    return HandConfig(poses=poses)
 
 
 def test_stored_pose_decodes_per_servo() -> None:
-    """A stored servo-frame array maps to deg2rad(stored + middle_pos) per servo id."""
-    positions = [70, 2, 59, -19, 64, -14, 59, -59]  # the real 'grab' array
-    targets = resolve_hand_pose_targets(_calib(), _poses(grab=positions), "grab")
+    """A stored per-finger HandPose maps to deg2rad(stored + middle_pos) per servo id."""
+    flat = [70, 2, 59, -19, 64, -14, 59, -59]  # the real 'grab' array (flat for ref)
+    targets = resolve_hand_pose_targets(_calib(), _poses(grab=flat), "grab")
 
     assert sorted(targets) == [1, 2, 3, 4, 5, 6, 7, 8]
     for servo_id in range(1, 9):
-        expected = math.radians(positions[servo_id - 1] + _MIDDLE[servo_id])
+        expected = math.radians(flat[servo_id - 1] + _MIDDLE[servo_id])
         assert math.isclose(targets[servo_id], expected, abs_tol=1e-9), f"servo {servo_id}"
 
 

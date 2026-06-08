@@ -21,23 +21,27 @@ from pathlib import Path
 
 from rustypot import Scs0009PyController
 
-from arm101_hand.config import load_hand_calibration
+from arm101_hand.config import load_hand_calibration, load_hand_config
+from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
 from arm101_hand.hand import compose_finger, degrees_to_servo_radians
+from arm101_hand.hand.protocol import SERVO_SYNC_S
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 YAML_PATH = SCRIPT_DIR / "hand_calib_values.yaml"
-
-# Demo-specific speeds, independent of YAML 'speed' (which is the calibration speed).
-MaxSpeed = 7
-CloseSpeed = 3
+HAND_CONFIG_PATH = SCRIPT_DIR.parents[2] / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 
 _cfg = load_hand_calibration(YAML_PATH)
+_hcfg = load_hand_config(HAND_CONFIG_PATH)
 _FINGERS = _cfg.fingers
 
+# Demo-specific speeds from hand_config.yaml tuning.speeds.
+MaxSpeed = _hcfg.tuning.speeds.open  # extension (quicker)
+CloseSpeed = _hcfg.tuning.speeds.close  # flexion (gentler settle)
+
 c = Scs0009PyController(
-    serial_port=_cfg.com_port,
-    baudrate=_cfg.baudrate,
-    timeout=_cfg.timeout,
+    serial_port=_hcfg.connection.port,
+    baudrate=_hcfg.connection.baudrate,
+    timeout=_hcfg.connection.timeout,
 )
 
 
@@ -46,15 +50,14 @@ c = Scs0009PyController(
 
 def _move(name, base, side, speed):
     block = _FINGERS[name]
-    id1 = block.servo_1.id
-    id2 = block.servo_2.id
+    id1, id2 = FINGER_SERVO_IDS[name]
     mp1 = block.servo_1.middle_pos
     mp2 = block.servo_2.middle_pos
     pos1, pos2 = compose_finger(base, side)
     c.write_goal_speed(id1, speed)
-    time.sleep(0.0002)
+    time.sleep(SERVO_SYNC_S)
     c.write_goal_speed(id2, speed)
-    time.sleep(0.0002)
+    time.sleep(SERVO_SYNC_S)
     c.write_goal_position(id1, degrees_to_servo_radians(id1, pos1, mp1))
     c.write_goal_position(id2, degrees_to_servo_radians(id2, pos2, mp2))
     time.sleep(0.005)
@@ -153,9 +156,10 @@ def ThumbOnly():  # noqa: N802
 
 
 def main():
-    for finger in _FINGERS.values():
-        c.write_torque_enable(finger.servo_1.id, 1)
-        c.write_torque_enable(finger.servo_2.id, 1)
+    for finger_name in _FINGERS:
+        id1, id2 = FINGER_SERVO_IDS[finger_name]
+        c.write_torque_enable(id1, 1)
+        c.write_torque_enable(id2, 1)
 
     print("Running AmazingHand full-hand demo (right hand, one cycle)...")
     try:
@@ -184,10 +188,11 @@ def main():
     except KeyboardInterrupt:
         print("\n^C -- aborting")
     finally:
-        for finger in _FINGERS.values():
-            for servo in (finger.servo_1, finger.servo_2):
+        for finger_name in _FINGERS:
+            id1, id2 = FINGER_SERVO_IDS[finger_name]
+            for sid in (id1, id2):
                 with contextlib.suppress(Exception):
-                    c.write_torque_enable(servo.id, 0)
+                    c.write_torque_enable(sid, 0)
 
 
 if __name__ == "__main__":

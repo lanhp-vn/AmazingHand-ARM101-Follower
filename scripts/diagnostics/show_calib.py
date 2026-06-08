@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from _hand_paths import HAND_CALIB_PATH
 
@@ -71,8 +72,13 @@ def _show_arm(live: bool) -> int:
 
 
 def _show_hand(live: bool) -> int:
-    from arm101_hand.config import load_hand_calibration
+    from arm101_hand.config import load_hand_calibration, load_hand_config
+    from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
     from arm101_hand.hand import servo_radians_to_degrees
+
+    # scripts/diagnostics/show_calib.py -> repo root is parents[2].
+    _repo_root = Path(__file__).resolve().parents[2]
+    hand_config_path = _repo_root / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 
     if not HAND_CALIB_PATH.is_file():
         print(f"calibration not found at {HAND_CALIB_PATH}", file=sys.stderr)
@@ -86,29 +92,39 @@ def _show_hand(live: bool) -> int:
     print(header)
     print("-" * len(header))
     for name, block in cfg.fingers.items():
+        id1, id2 = FINGER_SERVO_IDS[name]
         lim = block.limits
         print(
-            f"{name:<8}{block.servo_1.id:>3}{block.servo_1.middle_pos:>8.1f}"
-            f"{block.servo_2.id:>4}{block.servo_2.middle_pos:>8.1f}"
+            f"{name:<8}{id1:>3}{block.servo_1.middle_pos:>8.1f}"
+            f"{id2:>4}{block.servo_2.middle_pos:>8.1f}"
             f"{lim.base_min:>10.1f}{lim.base_max:>10.1f}{lim.side_min:>10.1f}{lim.side_max:>10.1f}"
         )
     if not live:
         return 0
     from rustypot import Scs0009PyController
 
-    print(f"\nConnecting read-only on {cfg.com_port} (torque stays off) ...")
+    if not hand_config_path.is_file():
+        print(f"hand config not found at {hand_config_path} (needed for --live)", file=sys.stderr)
+        return 1
+    hcfg = load_hand_config(hand_config_path)
+    print(f"\nConnecting read-only on {hcfg.connection.port} (torque stays off) ...")
     try:
-        c = Scs0009PyController(serial_port=cfg.com_port, baudrate=cfg.baudrate, timeout=cfg.timeout)
+        c = Scs0009PyController(
+            serial_port=hcfg.connection.port,
+            baudrate=hcfg.connection.baudrate,
+            timeout=hcfg.connection.timeout,
+        )
     except (ConnectionError, OSError) as e:
-        print(f"ERROR: could not open {cfg.com_port}: {e}", file=sys.stderr)
+        print(f"ERROR: could not open {hcfg.connection.port}: {e}", file=sys.stderr)
         return 1
     print(f"\n{'servo':>5}{'present_deg':>12}{'mid_pos':>9}")
     print("-" * 26)
-    for _name, block in cfg.fingers.items():
-        for servo in (block.servo_1, block.servo_2):
-            rad = _scalar(c.read_present_position(servo.id))
-            deg = servo_radians_to_degrees(servo.id, rad, servo.middle_pos)
-            print(f"{servo.id:>5}{deg:>12.2f}{servo.middle_pos:>9.1f}")
+    for name, block in cfg.fingers.items():
+        id1, id2 = FINGER_SERVO_IDS[name]
+        for servo_id, mid in ((id1, block.servo_1.middle_pos), (id2, block.servo_2.middle_pos)):
+            rad = _scalar(c.read_present_position(servo_id))
+            deg = servo_radians_to_degrees(servo_id, rad, mid)
+            print(f"{servo_id:>5}{deg:>12.2f}{mid:>9.1f}")
     return 0
 
 

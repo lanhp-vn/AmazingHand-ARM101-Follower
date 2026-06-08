@@ -7,15 +7,16 @@ does not cycle; it just parks the hand in one position.
 
 Two pose sources are accepted (resolved by ``arm101_hand.hand.resolve_hand_pose_targets``):
 
-  * Built-in ``open`` / ``close`` -- every finger at ``base_min + 5`` / ``base_max - 5``
-    (neutral spread). The 5-degree margin backs each pose off the calibrated
-    endpoints (measured at Step 4 with ``range_calib.py``) so the fingers never
-    slam the measured limits while still staying inside the range.
-  * Any named pose stored in ``data/hand_config.yaml`` (e.g. ``grab``, ``middle``,
-    saved via ``jog.py``).
+  * Built-in ``open`` / ``close`` -- every finger at ``base_min + margin`` / ``base_max - margin``
+    (neutral spread). The margin backs each pose off the calibrated endpoints
+    (measured at Step 4 with ``range_calib.py``) so the fingers never slam the
+    measured limits while still staying inside the range. Margin is read from
+    ``hand_config.yaml`` (``tuning.pose_margin_deg``).
+  * Any named pose stored in ``src/arm101_hand/data/hand_config.yaml`` (e.g.
+    ``grab``, ``middle``, saved via ``jog.py``).
 
-Speeds: built-in open/close use the ``speeds:`` block in ``hand_calib_values.yaml``;
-named poses use the default jog ``speed``.
+Speeds: built-in open/close use ``tuning.speeds`` from ``hand_config.yaml``;
+named poses use the default jog ``tuning.speed``.
 
 Usage:
   uv run python scripts/calibration/amazing_hand/set_pose.py open
@@ -31,13 +32,14 @@ from pathlib import Path
 
 from rustypot import Scs0009PyController
 
-from arm101_hand.config import HandPoseConfig, load_hand_calibration, load_hand_poses
+from arm101_hand.config import HandConfig, load_hand_calibration, load_hand_config
 from arm101_hand.hand import BUILTIN_POSES, available_pose_names, resolve_hand_pose_targets
+from arm101_hand.hand.protocol import SERVO_SYNC_S
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 YAML_PATH = SCRIPT_DIR / "hand_calib_values.yaml"
 # scripts/calibration/amazing_hand/set_pose.py -> repo root is parents[2].
-HAND_CONFIG_PATH = SCRIPT_DIR.parents[2] / "data" / "hand_config.yaml"
+HAND_CONFIG_PATH = SCRIPT_DIR.parents[2] / "src" / "arm101_hand" / "data" / "hand_config.yaml"
 
 
 def prompt_pose(valid):
@@ -62,31 +64,31 @@ def drive_targets(c, targets, speed):
     """Command every servo to its wire-radians target at ``speed`` (torque already on)."""
     for sid in sorted(targets):
         c.write_goal_speed(sid, speed)
-        time.sleep(0.0002)
+        time.sleep(SERVO_SYNC_S)
     for sid in sorted(targets):
         c.write_goal_position(sid, targets[sid])
-        time.sleep(0.0002)
+        time.sleep(SERVO_SYNC_S)
 
 
 def main():
     cfg = load_hand_calibration(YAML_PATH)
-    poses_cfg = load_hand_poses(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else HandPoseConfig()
+    hcfg: HandConfig = load_hand_config(HAND_CONFIG_PATH) if HAND_CONFIG_PATH.is_file() else HandConfig()
 
-    valid = available_pose_names(poses_cfg)
+    valid = available_pose_names(hcfg)
     pose = resolve_pose(sys.argv, valid)
 
-    targets = resolve_hand_pose_targets(cfg, poses_cfg, pose)
+    targets = resolve_hand_pose_targets(cfg, hcfg, pose, margin_deg=hcfg.tuning.pose_margin_deg)
     if pose == "close":
-        speed = cfg.speeds.close
+        speed = hcfg.tuning.speeds.close
     elif pose == "open":
-        speed = cfg.speeds.open
+        speed = hcfg.tuning.speeds.open
     else:
-        speed = cfg.speed
+        speed = hcfg.tuning.speed
 
     c = Scs0009PyController(
-        serial_port=cfg.com_port,
-        baudrate=cfg.baudrate,
-        timeout=cfg.timeout,
+        serial_port=hcfg.connection.port,
+        baudrate=hcfg.connection.baudrate,
+        timeout=hcfg.connection.timeout,
     )
 
     for sid in targets:
