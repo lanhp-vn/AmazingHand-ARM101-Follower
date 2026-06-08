@@ -16,6 +16,7 @@ calibration values -- it only drives the finger so you can watch for clean
 endpoints, no buzz, and a symmetric spread. Press Ctrl+C to stop.
 """
 
+import math
 import time
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from rustypot import Scs0009PyController
 
 from arm101_hand.config import load_hand_calibration, load_hand_config
 from arm101_hand.config.motor_ids import FINGER_SERVO_IDS
-from arm101_hand.hand import compose_finger, degrees_to_servo_radians
+from arm101_hand.hand import compose_finger, degrees_to_servo_radians, wait_hand_reached
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 YAML_PATH = SCRIPT_DIR / "hand_calib_values.yaml"
@@ -41,12 +42,15 @@ def prompt_finger():
 
 
 def _send_pose(c, id1, id2, mp1, mp2, base, side, speed):
+    """Write the finger's two goals; return {id: goal_radians} for arrival polling."""
     pos1, pos2 = compose_finger(base, side)
     c.write_goal_speed(id1, speed)
     c.write_goal_speed(id2, speed)
-    c.write_goal_position(id1, degrees_to_servo_radians(id1, pos1, mp1))
-    c.write_goal_position(id2, degrees_to_servo_radians(id2, pos2, mp2))
-    time.sleep(0.01)
+    rad1 = degrees_to_servo_radians(id1, pos1, mp1)
+    rad2 = degrees_to_servo_radians(id2, pos2, mp2)
+    c.write_goal_position(id1, rad1)
+    c.write_goal_position(id2, rad2)
+    return {id1: rad1, id2: rad2}
 
 
 def build_sequence(limits):
@@ -76,6 +80,9 @@ def main():
     mp2 = block.servo_2.middle_pos
     limits = block.limits
     speed = hcfg.tuning.speed
+    tol_rad = math.radians(hcfg.tuning.pose_margin_deg)
+    timeout_s = hcfg.tuning.pose_timeout_s
+    poll_s = hcfg.tuning.pose_poll_s
 
     sequence = build_sequence(limits)
 
@@ -94,7 +101,8 @@ def main():
         while True:
             for label, base, side, dwell in sequence:
                 print(f"  -> {label}  (base={base}, side={side})")
-                _send_pose(c, id1, id2, mp1, mp2, base, side, speed)
+                targets = _send_pose(c, id1, id2, mp1, mp2, base, side, speed)
+                wait_hand_reached(c, targets, tolerance_rad=tol_rad, timeout_s=timeout_s, poll_s=poll_s)
                 time.sleep(dwell)
     except KeyboardInterrupt:
         print("\n^C -- stopping")
