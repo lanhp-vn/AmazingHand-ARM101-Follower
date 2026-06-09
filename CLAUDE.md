@@ -35,7 +35,7 @@ AmazingHand-ARM101-Follower/
 ├── .python-version            # 3.12
 ├── src/arm101_hand/
 │   ├── robots/                # device layer — SO-ARM101 subclass
-│   ├── hand/                  # device layer — rustypot kinematics, pose-jog + range-calib state machines
+│   ├── hand/                  # device layer — rustypot kinematics + motion (position-poll) helpers, pose-jog/range-calib state machines, named-pose resolver
 │   ├── config/                # primitive layer — pydantic schemas (arm_config, hand_config, calibration, motor_ids)
 │   ├── data/                  # runtime operator config: arm_config.yaml + hand_config.yaml (+ README)
 │   └── scripts/               # application layer — console-script entries + shared device_setup
@@ -45,7 +45,7 @@ AmazingHand-ARM101-Follower/
 │   │   └── so_arm101/         # follower calibration runner + sweep/set_pose/jog/capture_pose
 │   ├── diagnostics/           # dual-device scan/show_calib (--device arm|hand) + device-agnostic find_port
 │   ├── teleop/                # planned
-│   └── demos/                 # planned (FullHand_Demo etc.)
+│   └── demos/                 # runnable demos — grab_sequence (staged arm+hand grab, reversible exit)
 ├── tests/                     # host unit tests (tests/unit) + hardware-gated (tests/hardware)
 ├── docs/
 │   ├── BOM.md                 # bill of materials + host PC spec
@@ -68,7 +68,9 @@ uv run python scripts/calibration/amazing_hand/motor_reset.py
 uv run python scripts/calibration/amazing_hand/middle_calib.py
 uv run python scripts/calibration/amazing_hand/range_calib.py              # per-finger DOF limits
 uv run python scripts/calibration/amazing_hand/finger_test.py
+uv run python scripts/calibration/amazing_hand/full_hand_test.py           # end-to-end sanity check; cycles all fingers (fist -> open -> each finger)
 uv run python scripts/calibration/amazing_hand/jog.py                      # jog all fingers; save whole-hand pose to src/arm101_hand/data/hand_config.yaml
+uv run python scripts/calibration/amazing_hand/set_pose.py <pose>          # drive whole hand to a named/built-in pose (open|close|grab) and hold
 
 # SO-ARM101 follower calibration (full procedure in scripts/calibration/so_arm101/README.md)
 # Output JSON lands at scripts/calibration/so_arm101/<id>.json (subclass default).
@@ -88,6 +90,9 @@ uv run python scripts/calibration/so_arm101/sweep.py <joint|all>          # rang
 uv run python scripts/calibration/so_arm101/set_pose.py home              # drive to a poses entry (home = folded storage), hold
 uv run python scripts/calibration/so_arm101/jog.py                       # interactive keyboard jog; saves poses to src/arm101_hand/data/arm_config.yaml
 uv run python scripts/calibration/so_arm101/capture_pose.py               # hand-pose the arm by hand, capture present degrees, save as a pose
+
+# Demos (read calibration + config; write neither — IL-5)
+uv run python scripts/demos/grab_sequence.py                              # staged arm+hand grab; 'h' on exit reverses the whole sequence
 
 # Lint / format / type-check / test
 uv run ruff format .

@@ -103,6 +103,7 @@ uv run python scripts/calibration/so_arm101/jog.py
 src/arm101_hand/        # device + application layer (subclass + console scripts)
 scripts/calibration/    # AmazingHand + SO-ARM101 calibration runners
 scripts/diagnostics/    # dual-device scan / show_calib / find_port
+scripts/demos/          # runnable demos (grab_sequence: staged arm+hand grab)
 docs/BOM.md             # bill of materials, host PC spec
 docs/conventions/       # 00 Iron Laws → 07 KISS
 references/             # 5 git submodules — read-only (IL-2)
