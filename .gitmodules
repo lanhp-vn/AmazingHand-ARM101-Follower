@@ -37,3 +37,18 @@
 [submodule "references/optomed-camera/nous_vclient"]
 	path = references/optomed-camera/nous_vclient
 	url = https://github.com/kim7tin/nous_vclient.git
+[submodule "references/computer-vision/opencv"]
+	path = references/computer-vision/opencv
+	url = https://github.com/opencv/opencv
+[submodule "references/computer-vision/opencv-python"]
+	path = references/computer-vision/opencv-python
+	url = https://github.com/opencv/opencv-python
+[submodule "references/computer-vision/opencv_contrib"]
+	path = references/computer-vision/opencv_contrib
+	url = https://github.com/opencv/opencv_contrib
+[submodule "references/computer-vision/mediapipe"]
+	path = references/computer-vision/mediapipe
+	url = https://github.com/google-ai-edge/mediapipe
+[submodule "references/computer-vision/GazeTracking"]
+	path = references/computer-vision/GazeTracking
+	url = https://github.com/antoinelame/GazeTracking
