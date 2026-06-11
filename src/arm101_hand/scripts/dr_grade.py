@@ -7,20 +7,15 @@ media_outputs/fundus_analysis/, prints a summary table. Local/offline only.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import sys
 from pathlib import Path
 
 from arm101_hand.config.fundus_analysis_config import load_fundus_analysis_config
 from arm101_hand.fundus_analysis.grader import DRGrader
+from arm101_hand.fundus_analysis.sidecar import sidecar_path, weights_sha8, write_sidecar
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
-
-
-def _sha8(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
 
 
 def _iter_images(input_path: Path) -> list[Path]:
@@ -63,12 +58,12 @@ def main() -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Loading model from {weights_path.name} ...")
-    grader = DRGrader(cfg, weights_path=weights_path, model_sha8=_sha8(weights_path))
+    grader = DRGrader(cfg, weights_path=weights_path, model_sha8=weights_sha8(weights_path))
 
     rows: list[tuple[str, str, str, str]] = []
     graded = skipped = fallback = errors = 0
     for img in images:
-        sidecar = output_dir / f"{img.stem}.dr.json"
+        sidecar = sidecar_path(output_dir, img.name)
         if sidecar.exists() and not args.force:
             skipped += 1
             continue
@@ -78,7 +73,7 @@ def main() -> None:
             errors += 1
             rows.append((img.name, "ERR", str(exc)[:40], "-"))
             continue
-        sidecar.write_text(json.dumps(res.to_dict(), indent=2))
+        write_sidecar(res, output_dir)
         graded += 1
         if res.crop["fallback"]:
             fallback += 1
