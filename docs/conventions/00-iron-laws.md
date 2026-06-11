@@ -15,7 +15,7 @@ See `docs/BOM.md` for the full bill of materials and per-bus current budgets.
 
 ## IL-2: `references/` is read-only
 
-The five submodules under `references/` (lerobot, AmazingHand, FeetechServo, rustypot, FTServo_Python) are **never modified in place**. Reasons:
+All git submodules under `references/` are **never modified in place**. These include the core robotics references — lerobot, AmazingHand, rustypot, FeetechServo, FTServo_Python — plus SO-ARM100 (CAD), the Optomed camera client, computer-vision libraries (OpenCV, MediaPipe, GazeTracking), and Anthropic tooling. Reasons:
 
 - They track upstream commits — local edits would be lost on the next bump.
 - They are vendored for reading, not forking.
