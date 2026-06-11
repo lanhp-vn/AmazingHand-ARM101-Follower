@@ -13,6 +13,6 @@ capture:
   hold_seconds: 3.0
   new_file_timeout_s: 20.0
   poll_s: 0.5
-  stable_polls: 2
+  stable_polls: 1  # 1 = download as soon as the new image is first seen (no second-confirmation wait)
   dcim_root: "\\DCIM"
   fundus_dir: fundus_images

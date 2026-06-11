@@ -3,7 +3,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from arm101_hand.camera.capture import save_capture, snapshot_filenames, wait_for_new_files
+from arm101_hand.camera.capture import (
+    pull_file,
+    save_capture,
+    snapshot_filenames,
+    wait_for_new_files,
+)
 from arm101_hand.camera.client import CameraError
 from arm101_hand.camera.protocol import FILE, FileInfo
 
@@ -139,3 +144,44 @@ def test_wait_for_new_files_errors_do_not_reset_size_stability():
     client = _CyclingClient([new], CameraError("Unknown type: 0x0"))
     out = wait_for_new_files(client, set(), dcim_root="\\DCIM", timeout_s=0.3, poll_s=0.0, stable_polls=2)
     assert [f.filename for f in out] == ["\\DCIM\\P0001\\IM0002EY.JPG"]
+
+
+def test_wait_for_new_files_downloads_on_first_sighting_with_stable_polls_1():
+    # stable_polls=1 -> return on the FIRST poll that sees a real new file (no 2nd confirmation).
+    new = _fi("\\DCIM\\P0001\\IM0002EY.JPG", 500)
+    calls = {"n": 0}
+
+    class _Counting:
+        def get_filelist(self, path):
+            calls["n"] += 1
+            return [new]
+
+    out = wait_for_new_files(_Counting(), set(), dcim_root="\\DCIM", timeout_s=5, poll_s=0.0, stable_polls=1)
+    assert [f.filename for f in out] == ["\\DCIM\\P0001\\IM0002EY.JPG"]
+    assert calls["n"] == 1  # returned on the first poll -- no second-confirmation wait
+
+
+class _ErroringGetFileClient:
+    """get_file replays ``script``: an Exception item is raised, a (FileInfo, bytes) item returned."""
+
+    def __init__(self, script):
+        self._script = list(script)
+
+    def get_file(self, path):
+        item = self._script.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def test_pull_file_retries_past_transient_error():
+    info = _fi("\\DCIM\\P0001\\IM0002EY.JPG", 4)
+    client = _ErroringGetFileClient([CameraError("Unknown type: 0x0"), (info, b"\xff\xd8\xff\xe0")])
+    fi, data = pull_file(client, "\\DCIM\\P0001\\IM0002EY.JPG", retries=3, retry_wait_s=0.0)
+    assert fi.filesize == 4 and data == b"\xff\xd8\xff\xe0"
+
+
+def test_pull_file_raises_after_exhausting_retries():
+    client = _ErroringGetFileClient([CameraError("a"), CameraError("b")])
+    with pytest.raises(CameraError):
+        pull_file(client, "\\bad", retries=2, retry_wait_s=0.0)

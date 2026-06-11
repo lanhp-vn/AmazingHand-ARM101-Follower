@@ -33,6 +33,7 @@ from arm101_hand.camera import (
     CameraError,
     PictorClient,
     classify_capture,
+    pull_file,
     save_capture,
     snapshot_filenames,
     wait_for_new_files,
@@ -197,9 +198,11 @@ def main() -> int:
                             "(is the camera in VIDEO mode?) -- saving anyway."
                         )
                     try:
-                        info, data = camera.get_file(f.filename)
+                        info, data = pull_file(camera, f.filename)
                     except (CameraError, OSError) as e:
-                        print(f"  could not pull {f.filename}: {e} -- press SPACE to try again.")
+                        print(
+                            f"  could not pull {f.filename} after retries: {e} -- press SPACE to try again."
+                        )
                         continue
                     if not data.startswith(b"\xff\xd8\xff") or len(data) != info.filesize:
                         print(

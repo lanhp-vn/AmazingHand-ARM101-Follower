@@ -27,9 +27,13 @@ class CameraConnection(BaseModel):
 class CameraCapture(BaseModel):
     model_config = ConfigDict(extra="forbid")
     hold_seconds: float = Field(default=3.0, ge=0, description="shutter hold dwell after press reaches")
-    new_file_timeout_s: float = Field(default=15.0, gt=0, description="max wait for the capture to land")
+    new_file_timeout_s: float = Field(default=20.0, gt=0, description="max wait for the capture to land")
     poll_s: float = Field(default=0.5, gt=0, description="filelist poll interval while waiting (s)")
-    stable_polls: int = Field(default=2, ge=1, description="consecutive equal-size polls before pulling")
+    stable_polls: int = Field(
+        default=1,
+        ge=1,
+        description="consecutive successful polls at one size before pulling (1 = download on first sighting)",
+    )
     dcim_root: str = Field(default="\\DCIM", description="camera image root for filelist/diff")
     fundus_dir: str = Field(default="fundus_images", description="repo-relative save folder")
 

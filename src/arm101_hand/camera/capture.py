@@ -1,10 +1,11 @@
 """Capture-pipeline I/O: wait for the new file to land, then save it + a sidecar.
 
-The new-file wait guards the write race (a file can appear in the filelist before its
-bytes are fully flushed) by requiring its size to be nonzero and unchanged across
-``stable_polls`` consecutive filelist reads. It also tolerates the Aurora's intermittent
-``GET_FILELIST`` CODE_FAIL: a failed poll is reported (not raised) and polling continues,
-so a later successful poll within the window still catches the capture.
+The new-file wait returns as soon as a new file is seen at a nonzero size (``stable_polls=1``,
+the default); a higher ``stable_polls`` adds a write-race guard by requiring the size to be
+unchanged across that many successful reads. It tolerates the Aurora's intermittent
+``GET_FILELIST`` CODE_FAIL: a failed poll is reported (not raised) and polling continues, so a
+later successful poll within the window still catches the capture. ``snapshot_filenames`` and
+``pull_file`` add the same retry resilience to the baseline read and the download.
 """
 
 from __future__ import annotations
@@ -37,6 +38,25 @@ def snapshot_filenames(client, dcim_root: str, *, retries: int = 5, retry_wait_s
     raise last_err if last_err is not None else RuntimeError("get_filelist failed")
 
 
+def pull_file(client, path: str, *, retries: int = 4, retry_wait_s: float = 0.5) -> tuple[FileInfo, bytes]:
+    """GET_FILE with retries past the Aurora's intermittent CODE_FAIL.
+
+    Returns ``(FileInfo, data)``; raises the last error if every attempt fails. Mirrors
+    ``snapshot_filenames`` so the download rides through the same transient camera errors
+    that the filelist polling does.
+    """
+    attempts = max(1, retries)
+    last_err: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return client.get_file(path)
+        except (CameraError, OSError) as e:
+            last_err = e
+            if attempt + 1 < attempts:
+                time.sleep(retry_wait_s)
+    raise last_err if last_err is not None else RuntimeError("get_file failed")
+
+
 def wait_for_new_files(
     client,
     before: set[str],
@@ -53,8 +73,13 @@ def wait_for_new_files(
     A ``GET_FILELIST`` error on any poll is reported via ``on_poll`` (as ``note`` text) and
     treated as "nothing new yet" -- polling keeps going so an intermittent camera error never
     aborts the whole wait. ``on_poll(elapsed_s, n_new, note)`` is called once per poll
-    (``note`` is "" on success, else the error text). Returns the stabilized files, or ``[]``
-    on timeout.
+    (``note`` is "" on success, else the error text). Returns the new files, or ``[]`` on timeout.
+
+    ``stable_polls`` is the number of consecutive *successful* polls that must see the same
+    nonzero-size new set before returning. ``stable_polls=1`` returns on the FIRST poll that
+    sees a real new file (download immediately); ``>=2`` adds the write-race guard (wait for
+    the size to settle). Failed polls never reset the counter, so interleaved camera errors
+    do not prevent successful sightings from lining up.
     """
     prev: dict[str, int] = {}
     rounds = 0
@@ -72,18 +97,16 @@ def wait_for_new_files(
         new = {f.filename: f for f in diff_new_files(before, listing)}
         if on_poll is not None:
             on_poll(time.monotonic() - start, len(new), note)
-        # A failed poll carries no information about new files -- skip the stability update so
-        # interleaved errors can't keep resetting it. Otherwise two consecutive *successful*
-        # sightings never line up and a clearly-present capture is never returned.
         if ok:
             sizes = {name: f.filesize for name, f in new.items()}
-            if new and sizes == prev and all(s > 0 for s in sizes.values()):
+            stable = bool(new) and all(s > 0 for s in sizes.values())
+            if stable and sizes == prev:
                 rounds += 1
-                if rounds >= stable_polls:
-                    return list(new.values())
             else:
-                rounds = 1 if (new and all(s > 0 for s in sizes.values())) else 0
+                rounds = 1 if stable else 0
             prev = sizes
+            if rounds >= stable_polls:
+                return list(new.values())
         if time.monotonic() >= deadline:
             return []
         time.sleep(poll_s)
