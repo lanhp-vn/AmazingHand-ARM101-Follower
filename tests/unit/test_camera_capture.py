@@ -111,3 +111,31 @@ def test_snapshot_filenames_raises_after_exhausting_retries():
     client = _ErroringClient([CameraError("a"), CameraError("b")])
     with pytest.raises(CameraError):
         snapshot_filenames(client, "\\DCIM", retries=2, retry_wait_s=0.0)
+
+
+class _CyclingClient:
+    """get_filelist alternates forever: returns ``listing`` on odd calls, raises ``error`` on even.
+
+    Mimics the Aurora seen on hardware -- the new file shows up on every *successful* poll but
+    failed polls are interleaved between them, so two successes are never literally back-to-back.
+    """
+
+    def __init__(self, listing, error):
+        self._listing = listing
+        self._error = error
+        self._n = 0
+
+    def get_filelist(self, path):
+        self._n += 1
+        if self._n % 2 == 1:
+            return self._listing
+        raise self._error
+
+
+def test_wait_for_new_files_errors_do_not_reset_size_stability():
+    # The file is seen at a stable size on every successful poll, but errors fall between them.
+    # A failed poll must NOT reset the stability counter, or the capture is never returned.
+    new = _fi("\\DCIM\\P0001\\IM0002EY.JPG", 500)
+    client = _CyclingClient([new], CameraError("Unknown type: 0x0"))
+    out = wait_for_new_files(client, set(), dcim_root="\\DCIM", timeout_s=0.3, poll_s=0.0, stable_polls=2)
+    assert [f.filename for f in out] == ["\\DCIM\\P0001\\IM0002EY.JPG"]

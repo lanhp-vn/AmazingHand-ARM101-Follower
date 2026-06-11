@@ -64,20 +64,26 @@ def wait_for_new_files(
         try:
             listing = client.get_filelist(dcim_root)
             note = ""
+            ok = True
         except (CameraError, OSError) as e:
             listing = []
             note = f"filelist error: {e}"
+            ok = False
         new = {f.filename: f for f in diff_new_files(before, listing)}
-        sizes = {name: f.filesize for name, f in new.items()}
         if on_poll is not None:
             on_poll(time.monotonic() - start, len(new), note)
-        if new and sizes == prev and all(s > 0 for s in sizes.values()):
-            rounds += 1
-            if rounds >= stable_polls:
-                return list(new.values())
-        else:
-            rounds = 1 if (new and all(s > 0 for s in sizes.values())) else 0
-        prev = sizes
+        # A failed poll carries no information about new files -- skip the stability update so
+        # interleaved errors can't keep resetting it. Otherwise two consecutive *successful*
+        # sightings never line up and a clearly-present capture is never returned.
+        if ok:
+            sizes = {name: f.filesize for name, f in new.items()}
+            if new and sizes == prev and all(s > 0 for s in sizes.values()):
+                rounds += 1
+                if rounds >= stable_polls:
+                    return list(new.values())
+            else:
+                rounds = 1 if (new and all(s > 0 for s in sizes.values())) else 0
+            prev = sizes
         if time.monotonic() >= deadline:
             return []
         time.sleep(poll_s)
