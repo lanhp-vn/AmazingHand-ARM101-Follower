@@ -1,17 +1,19 @@
 # `data/` — operator config files
 
-Two YAML files, one per device. Each is the **single tuning surface** for that device — the only place an operator edits connection settings, safety thresholds, motion knobs, and named poses. Both are loaded and validated by pydantic schemas in `src/arm101_hand/config/`.
+Four YAML files. The **arm** and **hand** each get one — the device's **single tuning surface** (connection settings, safety thresholds, motion knobs, named poses). The two **cameras** each get one — the Optomed Aurora fundus camera and the arm-mounted USB system camera. All are loaded and validated by pydantic schemas in `src/arm101_hand/config/`.
 
 | File | Schema owner | Purpose |
 |---|---|---|
 | `arm_config.yaml` | `arm101_hand.config.arm_config` (`ArmConfig`) | SO-ARM101 port, safety thresholds, motion tuning knobs, and named arm poses (degrees, lerobot `use_degrees` frame). |
 | `hand_config.yaml` | `arm101_hand.config.hand_config` (`HandConfig`) | AmazingHand port/baudrate/timeout, safety thresholds, motion tuning knobs, and named hand poses (per-finger `[servo_1, servo_2]` servo-frame degree pairs). |
+| `fundus_config.yaml` | `arm101_hand.config.fundus_config` (`FundusConfig`) | Optomed Aurora fundus camera: Pictor Wi-Fi connection (host/ports/timeouts) + capture tuning (shutter hold, new-file wait, DCIM root, fundus save dir). |
+| `system_camera_config.yaml` | `arm101_hand.config.system_camera_config` (`SystemCameraConfig`) | Arm-mounted USB observation camera (films the Aurora screen): cv2 preview/record (index, backend, window title, record dir, fps). |
 
 ---
 
 ## File structure — four sections
 
-Both files share the same section layout:
+The arm and hand files share the same section layout (the two camera files are flat operator config — no `safety`/`poses`):
 
 ```
 schema_version: 1

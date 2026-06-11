@@ -8,6 +8,8 @@
 | 6 | Output — hand power | **5 V / 3 A DC adapter** (barrel, 5.5×2.5 mm) | 1 | 5 V, 15 W max; direct pass-through to SCS0009 bus via Seeed board | AmazingHand kit bundle | AmazingHand kit |
 | 7 | USB↔TTL bridge — hand bus | **Waveshare CH343** USB-Enhanced-SERIAL (VID 1A86 / PID 55D3) | 1 | 3.3 V signal; bus-powered from host USB | Enumerates as `COM18` on this host; 1 Mbps half-duplex; signal only — does not power servos | Waveshare |
 | 8 | Host development PC | **Dell Inspiron 16 Plus 7620** (i7-12700H, 40 GiB RAM, Intel Iris Xe iGPU) | 1 | Mains AC | Sole dev + runtime target — no embedded board, no cross-compile. See §1 for full specs. | Owner |
+| 9 | Imaging — fundus camera | **Optomed Aurora** handheld fundus camera (TBD model/SKU) | 1 | TBD (own battery; Wi-Fi link to host) | Patient retinal imaging; controlled read-only over the Pictor Wi-Fi API (`fundus_config.yaml`). Hand presses its shutter in `grab_trigger_capture`. | TBD |
+| 10 | Imaging — system camera | **USB webcam** (TBD make/model) | 1 | 5 V via host USB | Arm-mounted; films the Aurora's screen for the live cv2 preview/record (`system_camera_config.yaml`); enumerates as camera index 1 on this host. | TBD |
 
 ---
 
