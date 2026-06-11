@@ -41,7 +41,7 @@ cd AmazingHand-ARM101-Follower
 uv sync
 ```
 
-`uv sync` provisions `.venv/` from `pyproject.toml` (lerobot[feetech] editable from the submodule, rustypot wheel, numpy, pyyaml, pydantic, opencv-python). About 60 packages get installed including `torch` — first sync takes a few minutes.
+`uv sync` provisions `.venv/` from `pyproject.toml` (lerobot[feetech] editable from the submodule, rustypot wheel, numpy, pyyaml, pydantic, opencv-python, timm). About 60 packages get installed including `torch` — first sync takes a few minutes.
 
 You do **not** need to activate the venv. Use `uv run <command>` for everything.
 
@@ -110,13 +110,29 @@ uv run python scripts/demos/grab_trigger_capture.py                    # live RO
 
 Camera prerequisites (the API cannot set these — do it on the device): **Still imaging** mode, **Quick imaging ON**, and **Optomed Client closed** (the Pictor API allows a single client connection — `aurora_probe` counts too, so if you just ran it, give the camera a few seconds to free the slot before launching the demo). The system-cam preview uses the full `opencv-python` wheel. Pulled fundus images + their JSON sidecars and any system-cam recordings save under `media_outputs/` (git-ignored — never commit medical images).
 
+### 5. Diabetic-retinopathy grading (optional)
+
+Grade the severity of diabetic retinopathy (0 = No DR through 4 = Proliferative) on captured fundus photos using a **RETFound** Vision Transformer (ViT-L/16) fine-tuned on the APTOS2019 dataset. This runs **fully locally and offline** — no image or result leaves the machine. It is a research/educational tool, **not a medical device, and not for clinical diagnosis**.
+
+Full procedure is in [`scripts/fundus_analysis/README.md`](scripts/fundus_analysis/README.md). The flow is a one-time weight export, an optional accuracy validation, then grading:
+
+```powershell
+uv run python scripts/fundus_analysis/export_weights.py     # one-time: slim weights -> models/ (~1.2 GB, git-ignored)
+uv run python scripts/fundus_analysis/aptos_eval.py         # optional: validate accuracy on the APTOS test split
+uv run arm101-dr-grade                                       # grade media_outputs/fundus_images/*.JPG
+```
+
+`arm101-dr-grade` writes a `<image>.dr.json` sidecar (predicted grade, per-class probabilities, confidence band, crop region, model hash) to `media_outputs/fundus_analysis/` and prints a summary table. Re-runs skip already-graded images unless you pass `--force`. The slim weights come from the read-only checkpoint under `references/AIML-models/APTOS2019/` (IL-2); the export never modifies it.
+
 ## Repo layout
 
 ```
-src/arm101_hand/        # device + application layer (subclass + console scripts)
+src/arm101_hand/        # device + application layer (subclass + console scripts + fundus_analysis DR grader)
 scripts/calibration/    # AmazingHand + SO-ARM101 calibration runners
 scripts/diagnostics/    # motors/ (scan / show_calib / find_port) + fundus_camera/ (aurora_probe / aurora_wiredump) + system_camera/ (usb_camera_probe / usb_camera_capture / usb_camera_roi_preview)
 scripts/demos/          # runnable demos (grab_sequence: staged grab; grab_toggle: + index-finger toggle; grab_trigger_capture: live system-cam window + Aurora shutter press + auto-pull)
+scripts/fundus_analysis/ # DR-grading ops: export_weights (slim weight export) + aptos_eval (validation)
+models/                 # git-ignored slim model weights exported from references/ checkpoints
 docs/BOM.md             # bill of materials, host PC spec
 docs/conventions/       # 00 Iron Laws → 07 KISS
 references/             # vendored git submodules — read-only (IL-2)

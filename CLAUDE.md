@@ -38,16 +38,19 @@ AmazingHand-ARM101-Follower/
 │   ├── hand/                  # device layer — rustypot kinematics + motion (position-poll) helpers, finger_io (shared finger read/drive), pose-jog/range-calib + index_toggle/index_trigger state machines, named-pose resolver
 │   ├── fundus_camera/         # device layer — Optomed Aurora: read-only Pictor Wi-Fi client (discovery + file pull) + pure protocol (patient retinal images)
 │   ├── system_camera/         # device layer — arm-mounted USB observation cam (films the Aurora screen): cv2 live preview + record + last-capture still popup; fixed-ROI zoom (roi.py) + imshow_fit aspect-preserving letterbox
-│   ├── config/                # primitive layer — pydantic schemas (arm_config, hand_config, fundus_config, system_camera_config, calibration, motor_ids)
-│   ├── data/                  # runtime operator config: arm_config.yaml + hand_config.yaml + fundus_config.yaml + system_camera_config.yaml (+ README)
-│   └── scripts/               # application layer — console-script entries + shared device_setup/grab_common
+│   ├── fundus_analysis/       # device layer — DR-grading inference: preprocess (circle-crop + eval transform), model (timm ViT-L/16 loader), grader (DRGrader load-once + GradeResult). Local/offline only
+│   ├── config/                # primitive layer — pydantic schemas (arm_config, hand_config, fundus_config, system_camera_config, fundus_analysis_config, calibration, motor_ids)
+│   ├── data/                  # runtime operator config: arm_config.yaml + hand_config.yaml + fundus_config.yaml + system_camera_config.yaml + fundus_analysis_config.yaml (+ README)
+│   └── scripts/               # application layer — console-script entries (incl. dr_grade) + shared device_setup/grab_common
 ├── scripts/
 │   ├── calibration/
 │   │   ├── amazing_hand/      # snake_case calibration/test/jog scripts + measurement-only YAML (v3 schema)
 │   │   └── so_arm101/         # follower calibration runner + sweep/set_pose/jog/capture_pose
 │   ├── diagnostics/           # grouped by device: motors/ (dual-device scan/show_calib --device arm|hand + device-agnostic find_port) + fundus_camera/ (read-only aurora_probe / aurora_wiredump) + system_camera/ (usb_camera_probe smoke test / usb_camera_capture still / usb_camera_roi_preview ROI check)
+│   ├── fundus_analysis/       # DR-grading ops scripts: export_weights (one-time slim safetensors export) + aptos_eval (test-split validation) + README
 │   ├── teleop/                # planned
 │   └── demos/                 # runnable demos — grab_sequence (staged grab) + grab_toggle (index-finger button) + grab_trigger_capture (live system-cam window + 'r' record; index presses Aurora shutter, auto-pulls the fundus image)
+├── models/                    # gitignored — slim safetensors weights exported from references/ checkpoints (regenerable)
 ├── tests/                     # host unit tests (tests/unit) + hardware-gated (tests/hardware)
 ├── docs/
 │   ├── BOM.md                 # bill of materials + host PC spec
@@ -104,6 +107,12 @@ uv run python scripts/demos/grab_sequence.py                              # stag
 uv run python scripts/demos/grab_toggle.py                                # grab, then SPACE toggles the index finger in/out like a button
 uv run python scripts/demos/grab_trigger_capture.py                       # live system-cam window, ROI-zoomed to the Aurora screen ('r' records that zoomed feed to media_outputs/camera_recordings/); SPACE presses the shutter + auto-pulls the fundus image to media_outputs/fundus_images/ + pops it up in a "last capture" window until the next trigger (camera: Still + Quick imaging, Optomed Client closed)
 
+# DR-grading inference (RETFound ViT-L/16 fine-tuned on APTOS2019; local/offline; reads references/ read-only — IL-2)
+# Provenance: vit_large_patch16_224, global_pool=avg, input_size=224, 5 classes, epoch 27. Full procedure in scripts/fundus_analysis/README.md.
+uv run python scripts/fundus_analysis/export_weights.py                   # one-time: checkpoint-best.pth -> models/retfound_aptos2019_vitl16.safetensors (~1.2 GB, gitignored)
+uv run python scripts/fundus_analysis/aptos_eval.py [--limit-per-class N] # validate model+transform on the APTOS test split (accuracy / per-class F1 / quadratic-weighted kappa)
+uv run arm101-dr-grade [--input PATH] [--force] [--limit N]               # grade media_outputs/fundus_images/*.JPG -> <stem>.dr.json sidecars in media_outputs/fundus_analysis/ + console table
+
 # Lint / format / type-check / test
 uv run ruff format .
 uv run ruff check .
@@ -138,6 +147,7 @@ uv run pytest -m 'not hardware'           # host unit tests (no bus)
 ## 7. Tech-debt & known limitations
 
 - **No teleop, no policy, no dataset code.** The jog / calibration / diagnostic scripts drive poses; no teleoperation or learned-policy path yet.
-- **System-camera preview is the only computer-vision code so far.** `src/arm101_hand/system_camera/` (cv2 HighGUI window + recording, plus a "last capture" still popup the same thread hosts via `WebcamPreview.show_still`) films the Aurora screen; used by `grab_trigger_capture` + `usb_camera_probe`. A fixed ROI (`roi.py` / `AURORA_SCREEN_ROI`) zooms the preview + recording onto the screen, and `imshow_fit` letterboxes to preserve aspect ratio because `cv2.WINDOW_KEEPRATIO` is a silent no-op on this wheel's Win32 highgui backend. It needs the full `opencv-python` wheel, so `pyproject.toml` drops lerobot's `opencv-python-headless` pin via `[tool.uv] override-dependencies` — keep that override (a headless-pinning dep re-clobbers `cv2`). The vendored `references/computer-vision/` (OpenCV, MediaPipe, GazeTracking) is still untouched, for planned fundus-image / gaze work.
+- **System-camera preview + DR-grading inference are the computer-vision code so far.** `src/arm101_hand/system_camera/` (cv2 HighGUI window + recording, plus a "last capture" still popup the same thread hosts via `WebcamPreview.show_still`) films the Aurora screen; used by `grab_trigger_capture` + `usb_camera_probe`. A fixed ROI (`roi.py` / `AURORA_SCREEN_ROI`) zooms the preview + recording onto the screen, and `imshow_fit` letterboxes to preserve aspect ratio because `cv2.WINDOW_KEEPRATIO` is a silent no-op on this wheel's Win32 highgui backend. It needs the full `opencv-python` wheel, so `pyproject.toml` drops lerobot's `opencv-python-headless` pin via `[tool.uv] override-dependencies` — keep that override (a headless-pinning dep re-clobbers `cv2`). The vendored `references/computer-vision/` (OpenCV, MediaPipe, GazeTracking) is still untouched, for planned gaze work.
+- **DR grading is inference-only (Phase 1).** `src/arm101_hand/fundus_analysis/` + `arm101-dr-grade` batch-grade Aurora captures with a RETFound ViT-L/16 (timm) fine-tuned on APTOS2019; design/plan in `docs/superpowers/{specs,plans}/2026-06-11-dr-grading-*`. Pipeline validated on the APTOS test split (quadratic-weighted kappa 0.91 — see `scripts/fundus_analysis/README.md` for the full metrics). No fine-tuning path. Domain shift (APTOS/EyePACS training vs Optomed Aurora handheld) means real-capture accuracy can drop below test-split numbers — research/educational, not diagnostic. Phase 2 (wire `DRGrader` into `grab_trigger_capture`) is the remaining DR work.
 - **No CI.** `ruff` / `pytest` are local-only for now.
-- **No discrete GPU.** Local ML training is CPU-bound; large-policy work needs cloud.
+- **No discrete GPU.** Local ML training is CPU-bound; ViT-L inference runs on CPU (~2-5 s/image); large-policy work needs cloud.

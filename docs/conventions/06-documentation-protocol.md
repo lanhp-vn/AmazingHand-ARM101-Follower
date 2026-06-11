@@ -164,6 +164,13 @@ Every normative fact, procedure, spec, or reusable table lives in **one** Markdo
 | Conventional Commits, scopes, atomic cross-device commit (IL-6) | `05-git-workflow.md` |
 | Doc-update protocol + DRY registry (this file) | `06-documentation-protocol.md` |
 
+#### AI / ML inference
+| Topic | Canonical |
+|---|---|
+| DR-grading architecture + design rationale | `docs/superpowers/specs/2026-06-11-dr-grading-design.md` |
+| DR-grading run order + recorded APTOS validation metrics + checkpoint provenance | `scripts/fundus_analysis/README.md` |
+| PyTorch checkpoint load pattern (weights_only, safetensors export, timm ViT recipe) | `.claude/skills/ml-inference/SKILL.md` |
+
 ### 10.2 When you add a new topic
 
 1. Decide where the canonical file is. If an obvious home doesn't exist, create one.
