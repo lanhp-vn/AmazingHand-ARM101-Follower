@@ -1,0 +1,16 @@
+# DR-grading inference operator config. Edit by hand; never written at runtime (IL-5).
+model_arch: vit_large_patch16_224
+input_size: 224
+num_classes: 5
+weights_filename: retfound_aptos2019_vitl16.safetensors
+models_dir: models
+images_dir: media_outputs/fundus_images
+output_dir: media_outputs/fundus_analysis
+preprocess_version: "1"
+confidence:
+  high: 0.80
+  medium: 0.65
+crop:
+  background_threshold: 12
+  margin_frac: 0.02
+  min_disc_area_frac: 0.05
