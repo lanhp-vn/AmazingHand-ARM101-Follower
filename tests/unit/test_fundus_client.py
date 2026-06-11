@@ -10,6 +10,7 @@ from arm101_hand.fundus_camera.protocol import (
     GET_CAMERA_STATUS,
     GET_FILE,
     GET_FILELIST,
+    CameraInfo,
     pack_header,
 )
 
@@ -110,6 +111,41 @@ def test_too_many_out_of_sync_phantoms_raise():
     with pytest.raises(CameraError) as ei:
         _client_with(FakeSocket(_PHANTOM * 20)).get_filelist("\\DCIM")
     assert "out-of-sync" in str(ei.value)
+
+
+def test_send_reconnects_after_peer_closed_socket(monkeypatch):
+    # The camera closes the TCP connection after a capture (the Pictor API serves one client).
+    # The cached-but-dead socket then reads 0 bytes -> ConnectionError; ensure_connected() can't
+    # see a peer-closed socket. _send must drop it, re-discover + reconnect, and retry the request
+    # once -- so the next capture succeeds instead of failing "socket closed after 0/12 bytes".
+    dead = FakeSocket(b"")  # empty buffer -> recv() returns b"" -> ConnectionError on the header
+    payload = struct.pack("<I", 0) + b"3.3.7.11860".ljust(16, b"\x00") + b"1.3.0.2563".ljust(16, b"\x00")
+    fresh = FakeSocket(pack_header(GET_CAMERA_STATUS, CODE_OK, 1) + payload)
+
+    c = _client_with(dead)
+    # Stand in for the real discover()/connect() handshake: hand back a (non-reserved) camera and
+    # install the fresh socket, mimicking the camera reopening its listener on re-discovery.
+    monkeypatch.setattr(c, "discover", lambda: CameraInfo(2, "mac", 0, 1, "S"))
+    monkeypatch.setattr(c, "connect", lambda: setattr(c, "_sock", fresh))
+
+    st = c.get_status()  # raises ConnectionError on the un-healed client
+    assert st.sw_version == "3.3.7.11860"
+    assert fresh.sent  # the retried request landed on the reconnected socket
+
+
+def test_send_surfaces_camera_error_when_reconnect_fails(monkeypatch):
+    # If the camera is truly gone, the peer-close heal reconnects, fails discovery, and must
+    # surface a *catchable* CameraError -- never an AssertionError that would crash the demo's
+    # "press SPACE to try again" degrade path. The follow-up call on the now-dropped socket must
+    # also raise CameraError("not connected"), not AssertionError.
+    c = _client_with(FakeSocket(b""))  # dead socket -> ConnectionError on the first read
+    monkeypatch.setattr(c, "discover", lambda: None)  # camera does not answer re-discovery
+
+    with pytest.raises(CameraError):
+        c.get_status()
+    assert c._sock is None  # the dead socket was dropped
+    with pytest.raises(CameraError):  # not connected -> CameraError, never AssertionError
+        c.get_status()
 
 
 # Real 56-byte CAMERA_DETECTED reply (serial 1125581093422), reused as a discovery payload.

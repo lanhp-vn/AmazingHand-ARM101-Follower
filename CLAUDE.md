@@ -37,7 +37,7 @@ AmazingHand-ARM101-Follower/
 │   ├── robots/                # device layer — SO-ARM101 subclass
 │   ├── hand/                  # device layer — rustypot kinematics + motion (position-poll) helpers, finger_io (shared finger read/drive), pose-jog/range-calib + index_toggle/index_trigger state machines, named-pose resolver
 │   ├── fundus_camera/         # device layer — Optomed Aurora: read-only Pictor Wi-Fi client (discovery + file pull) + pure protocol (patient retinal images)
-│   ├── system_camera/         # device layer — arm-mounted USB observation cam (films the Aurora screen): cv2 live preview + record
+│   ├── system_camera/         # device layer — arm-mounted USB observation cam (films the Aurora screen): cv2 live preview + record + last-capture still popup
 │   ├── config/                # primitive layer — pydantic schemas (arm_config, hand_config, fundus_config, system_camera_config, calibration, motor_ids)
 │   ├── data/                  # runtime operator config: arm_config.yaml + hand_config.yaml + fundus_config.yaml + system_camera_config.yaml (+ README)
 │   └── scripts/               # application layer — console-script entries + shared device_setup/grab_common
@@ -99,7 +99,7 @@ uv run python scripts/calibration/so_arm101/capture_pose.py               # hand
 # Demos (read calibration + config; write neither — IL-5)
 uv run python scripts/demos/grab_sequence.py                              # staged arm+hand grab; 'h' on exit reverses the whole sequence
 uv run python scripts/demos/grab_toggle.py                                # grab, then SPACE toggles the index finger in/out like a button
-uv run python scripts/demos/grab_trigger_capture.py                       # live system-cam window ('r' records to media_outputs/camera_recordings/); SPACE presses the shutter + auto-pulls the fundus image to media_outputs/fundus_images/ (camera: Still + Quick imaging, Optomed Client closed)
+uv run python scripts/demos/grab_trigger_capture.py                       # live system-cam window ('r' records to media_outputs/camera_recordings/); SPACE presses the shutter + auto-pulls the fundus image to media_outputs/fundus_images/ + pops it up in a "last capture" window until the next trigger (camera: Still + Quick imaging, Optomed Client closed)
 
 # Lint / format / type-check / test
 uv run ruff format .
@@ -135,6 +135,6 @@ uv run pytest -m 'not hardware'           # host unit tests (no bus)
 ## 7. Tech-debt & known limitations
 
 - **No teleop, no policy, no dataset code.** The jog / calibration / diagnostic scripts drive poses; no teleoperation or learned-policy path yet.
-- **System-camera preview is the only computer-vision code so far.** `src/arm101_hand/system_camera/` (cv2 HighGUI window + recording) films the Aurora screen; used by `grab_trigger_capture` + `usb_camera_probe`. It needs the full `opencv-python` wheel, so `pyproject.toml` drops lerobot's `opencv-python-headless` pin via `[tool.uv] override-dependencies` — keep that override (a headless-pinning dep re-clobbers `cv2`). The vendored `references/computer-vision/` (OpenCV, MediaPipe, GazeTracking) is still untouched, for planned fundus-image / gaze work.
+- **System-camera preview is the only computer-vision code so far.** `src/arm101_hand/system_camera/` (cv2 HighGUI window + recording, plus a "last capture" still popup the same thread hosts via `WebcamPreview.show_still`) films the Aurora screen; used by `grab_trigger_capture` + `usb_camera_probe`. It needs the full `opencv-python` wheel, so `pyproject.toml` drops lerobot's `opencv-python-headless` pin via `[tool.uv] override-dependencies` — keep that override (a headless-pinning dep re-clobbers `cv2`). The vendored `references/computer-vision/` (OpenCV, MediaPipe, GazeTracking) is still untouched, for planned fundus-image / gaze work.
 - **No CI.** `ruff` / `pytest` are local-only for now.
 - **No discrete GPU.** Local ML training is CPU-bound; large-policy work needs cloud.

@@ -3,8 +3,11 @@
 Discovery (UDP) then a held TCP message socket on :8000. Only read commands are
 implemented -- never POST_FILE (IL: no accidental writes to the camera). The camera
 opens its TCP listener in response to discovery, so a dead socket is re-established by
-re-discovering: ``ensure_connected`` does that idempotently. Verified on an Optomed
-Aurora 2026-06-10.
+re-discovering. ``ensure_connected`` does that only when there is no socket yet -- it
+cannot detect a socket the camera closed mid-session (a one-client API drops idle/used
+connections). That peer-close is caught at I/O time: ``_send`` retries once through a
+fresh discover + reconnect, so a capture after an idle gap recovers transparently.
+Verified on an Optomed Aurora 2026-06-10.
 """
 
 from __future__ import annotations
@@ -175,11 +178,26 @@ class PictorClient:
         return bytes(out)
 
     def _send(self, cmd: int, payload: bytes = b"") -> tuple[int, int, int]:
-        assert self._sock is not None, "not connected"
         seq = self._next_seq()
         packet = pack_header(cmd, CODE_REQUEST, seq) + payload
         if self._trace is not None:
             self._trace(f"SEND cmd=0x{cmd:X} seq={seq}", packet)
+        try:
+            return self._send_once(packet, seq)
+        except ConnectionError:
+            # The camera closed the TCP connection after the previous exchange (the Pictor API
+            # serves one client and drops the socket); the cached socket then reads 0 bytes.
+            # ensure_connected() can't see a peer-closed socket -- it only checks ``is not None`` --
+            # so drop it, re-discover + reconnect, and retry the request once. All commands here
+            # are read-only + idempotent, so re-sending on a fresh connection is safe. A second
+            # failure (or a camera that won't reconnect) propagates to the caller's retry layer.
+            self.close()
+            self.ensure_connected()
+            return self._send_once(packet, seq)
+
+    def _send_once(self, packet: bytes, seq: int) -> tuple[int, int, int]:
+        if self._sock is None:  # surfaces as a catchable CameraError, never an AssertionError
+            raise CameraError("not connected")
         self._sock.sendall(packet)
         return self._recv_response(seq)
 

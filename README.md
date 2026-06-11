@@ -99,12 +99,12 @@ uv run python scripts/calibration/so_arm101/jog.py
 
 ### 4. Robot-triggered fundus capture (optional)
 
-Two cameras are involved: the **Optomed Aurora** *fundus* camera (captures patient retinal images, over Wi-Fi/Pictor) and an arm-mounted USB *system* camera that films the Aurora's screen. With the Aurora on the same Wi-Fi, the hand presses its dual-action shutter and the workspace auto-pulls the freshly-captured image over the Pictor protocol; the demo also opens a live window for the system camera (press `r` to record that feed).
+Two cameras are involved: the **Optomed Aurora** *fundus* camera (captures patient retinal images, over Wi-Fi/Pictor) and an arm-mounted USB *system* camera that films the Aurora's screen. With the Aurora on the same Wi-Fi, the hand presses its dual-action shutter and the workspace auto-pulls the freshly-captured image over the Pictor protocol; the demo also opens a live window for the system camera (press `r` to record that feed). After each successful pull the captured image pops up in its own window and stays until the next shutter press.
 
 ```powershell
 uv run python scripts/diagnostics/aurora_probe.py            # read-only Aurora reachability + status + filelist
 uv run python scripts/diagnostics/usb_camera_probe.py        # system-cam smoke test: live window + 'r' record (no motors/Aurora)
-uv run python scripts/demos/grab_trigger_capture.py          # live system-cam window; SPACE presses the shutter, image lands in media_outputs/fundus_images/
+uv run python scripts/demos/grab_trigger_capture.py          # live system-cam window; SPACE presses the shutter, image lands in media_outputs/fundus_images/ and pops up until the next capture
 ```
 
 Camera prerequisites (the API cannot set these — do it on the device): **Still imaging** mode, **Quick imaging ON**, and **Optomed Client closed** (the Pictor API allows a single client connection — `aurora_probe` counts too, so if you just ran it, give the camera a few seconds to free the slot before launching the demo). The system-cam preview uses the full `opencv-python` wheel. Pulled fundus images + their JSON sidecars and any system-cam recordings save under `media_outputs/` (git-ignored — never commit medical images).

@@ -9,6 +9,10 @@ devices hold ``grab`` under torque, each SPACE runs ONE capture cycle:
   press the index onto the Aurora's shutter -> hold -> release ->
   diff the camera filelist -> pull the new image(s) + metadata into ``media_outputs/fundus_images/``.
 
+After a successful pull, the freshly saved image pops up in a second window (titled
+"... -- last capture") and stays there until the next capture replaces it. The popup rides on
+the USB preview's cv2 thread, so it only appears when that preview window is available.
+
 PREREQUISITES (set on the camera; the API cannot):
   * Capture mode = STILL imaging  (a held press in VIDEO mode records a clip!)
   * Quick imaging = ON            (else each capture waits in an on-device preview)
@@ -275,6 +279,9 @@ def main() -> int:
                         camera_wifi=status.wifi_version,
                     )
                     print(f"  SUCCESS: saved {saved.name} ({len(data)} bytes). Ready for next trigger.")
+                    if preview is not None:
+                        preview.show_still(data)  # pop up the image; stays until the next capture
+                        print("  (last capture shown in its popup window until the next trigger)")
         except KeyboardInterrupt:
             print("\n^C -- leaving trigger mode")
 

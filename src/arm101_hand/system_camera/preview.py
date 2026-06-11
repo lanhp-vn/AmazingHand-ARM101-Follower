@@ -13,7 +13,10 @@ Threading contract (the part that matters):
   * The capture thread is the ONLY place the cv2 window / capture / writer are touched
     (created, pumped, destroyed). It is a daemon thread, so a caller's blocking
     ``msvcrt.getwch`` keyboard loop on the main thread never freezes the window.
-  * Callers interact ONLY through :meth:`start`, :meth:`toggle_record`, :meth:`stop`.
+    Because HighGUI is single-threaded, this same thread also hosts the optional
+    "last capture" still window (see :meth:`show_still`) -- callers never touch cv2.
+  * Callers interact ONLY through :meth:`start`, :meth:`toggle_record`, :meth:`show_still`,
+    :meth:`stop`.
   * Recording is requested via a thread-safe Event; the capture thread owns the writer
     and reacts to it -- the ``VideoWriter`` is created lazily from a real captured frame
     (size + fps), and the CLEAN frame is written BEFORE any on-screen overlay.
@@ -33,6 +36,7 @@ from pathlib import Path
 from typing import Literal
 
 import cv2
+import numpy as np
 
 _FPS_FALLBACK = 20.0
 Backend = Literal["auto", "dshow"]
@@ -59,6 +63,12 @@ class WebcamPreview:
         self._record = threading.Event()
         self._lock = threading.Lock()
         self._record_path: Path | None = None
+
+        # "last capture" still window -- callers hand encoded bytes via show_still(); the
+        # capture thread decodes the latest set and re-shows it every loop (see _run).
+        self._still_title = f"{window_title} -- last capture"
+        self._still_lock = threading.Lock()
+        self._still_pending: bytes | None = None
 
         self._ready = threading.Event()  # set once the thread has tried to open the camera
         self.ok = False  # True iff the camera opened
@@ -91,6 +101,15 @@ class WebcamPreview:
     @property
     def recording(self) -> bool:
         return self._record.is_set()
+
+    def show_still(self, image_bytes: bytes) -> None:
+        """Hand an encoded image (JPEG/PNG bytes) to the capture thread to display in a second
+        window titled ``"<window_title> -- last capture"``. It stays up, unchanged, until the
+        next ``show_still`` replaces it -- the capture thread (the sole cv2 owner) decodes it once
+        and re-shows it every loop, so it never goes stale or first-paints gray. Thread-safe and
+        non-blocking; a no-op if the capture thread never opened the camera."""
+        with self._still_lock:
+            self._still_pending = image_bytes
 
     def stop(self) -> None:
         """Signal teardown and wait for the thread to release the window + cv2 on its own side."""
@@ -130,11 +149,29 @@ class WebcamPreview:
 
         writer: cv2.VideoWriter | None = None
         recording = False
+        still_frame = None  # decoded latest capture; re-shown every loop once set
+        still_shown = False
         try:
             while not self._stop.is_set():
+                # A new capture handed via show_still()? Decode once (cheap, only on change),
+                # then re-imshow every loop below so the window never goes gray or stale.
+                with self._still_lock:
+                    pending = self._still_pending
+                    self._still_pending = None
+                if pending is not None:
+                    decoded = cv2.imdecode(np.frombuffer(pending, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if decoded is not None:
+                        still_frame = decoded
+                        if not still_shown:
+                            cv2.namedWindow(self._still_title, cv2.WINDOW_NORMAL)
+                            cv2.resizeWindow(self._still_title, 720, 720)
+                            still_shown = True
+                if still_frame is not None:
+                    cv2.imshow(self._still_title, still_frame)
+
                 ok, frame = cap.read()
                 if not ok or frame is None:
-                    cv2.waitKey(30)  # transient hiccup -- keep the window pumping, retry
+                    cv2.waitKey(30)  # transient hiccup -- keep the windows pumping, retry
                     continue
 
                 want = self._record.is_set()
