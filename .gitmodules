@@ -52,3 +52,6 @@
 [submodule "references/computer-vision/GazeTracking"]
 	path = references/computer-vision/GazeTracking
 	url = https://github.com/antoinelame/GazeTracking
+[submodule "references/AIML-models/Awesome Diabetic-Retinopathy-Detection"]
+	path = references/AIML-models/Awesome Diabetic-Retinopathy-Detection
+	url = https://github.com/FDU-VTS/Awesome-Diabetic-Retinopathy-Detection
