@@ -475,12 +475,15 @@ def main() -> int:
                         turn_shots = []
                         print("  patient turn complete -- press 'n' for the next patient.")
                 elif key in ("n", "N"):  # advance to the next patient (re-arm AUTO)
-                    if turn_shots:
+                    if turn_shots and grading_enabled:
                         print(
                             f"  {len(turn_shots)} shot(s) not yet analyzed -- "
                             "press 'g' to grade first, or 'q' to exit."
                         )
                     else:
+                        if turn_shots:  # capture-only: shots are already saved to disk, nothing to grade
+                            print(f"  ({len(turn_shots)} shot(s) saved; grading off) -- next patient.")
+                        turn_shots = []
                         state_auto = auto_trigger.arm()
                         armed = True
                         if mode == "AUTO":
