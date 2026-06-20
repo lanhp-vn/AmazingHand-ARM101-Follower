@@ -172,6 +172,12 @@ Every normative fact, procedure, spec, or reusable table lives in **one** Markdo
 | DR-grading run order + recorded APTOS validation metrics + checkpoint provenance | `scripts/fundus_analysis/README.md` |
 | PyTorch checkpoint load pattern (weights_only, safetensors export, timm ViT recipe) | `.claude/skills/ml-inference/SKILL.md` |
 
+#### Computer vision (system camera)
+| Topic | Canonical |
+|---|---|
+| Arc auto-trigger design + lifecycle (HSV per-arc-band masking, green-clear re-arm) | `docs/superpowers/specs/2026-06-19-arc-auto-trigger-design.md` |
+| Arc auto-trigger implementation plan (TDD task breakdown) | `docs/superpowers/plans/2026-06-19-arc-auto-trigger.md` |
+
 ### 10.2 When you add a new topic
 
 1. Decide where the canonical file is. If an obvious home doesn't exist, create one.
