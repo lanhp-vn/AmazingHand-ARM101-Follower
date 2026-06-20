@@ -6,6 +6,7 @@ retinal images) in ``arm101_hand.fundus_camera``.
 """
 
 from .arc_detector import AlignmentState, classify_band, detect
+from .auto_trigger import AutoTriggerState, arm, update
 from .focus import best_sample, focus_reached_baseline, focus_steps, sharpness
 from .preview import (
     WebcamPreview,
@@ -19,8 +20,10 @@ from .roi import AURORA_SCREEN_ROI, Roi
 __all__ = [
     "AURORA_SCREEN_ROI",
     "AlignmentState",
+    "AutoTriggerState",
     "Roi",
     "WebcamPreview",
+    "arm",
     "best_sample",
     "classify_band",
     "detect",
@@ -31,4 +34,5 @@ __all__ = [
     "open_capture",
     "read_settled_frame",
     "sharpness",
+    "update",
 ]
