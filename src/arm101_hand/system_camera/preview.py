@@ -47,6 +47,12 @@ Backend = Literal["auto", "dshow"]
 # "the camera's max" without hardcoding a resolution (see open_capture's width/height=None path).
 _MAX_DIM_REQUEST = 100_000
 
+# Cap the INITIAL preview-window size so a high-res stream (e.g. 2592x1944) doesn't open a giant
+# window. Only the on-open size -- windows are WINDOW_NORMAL (resizable) + letterboxed (imshow_fit),
+# so content is never distorted. The ROI consumers (640x480) are under this and unaffected.
+_MAX_INITIAL_WIN_W = 960
+_MAX_INITIAL_WIN_H = 720
+
 
 def _apply_format(cap: cv2.VideoCapture, fourcc: str, width: int | None, height: int | None) -> None:
     """Request ``fourcc`` then resolution on an open capture (no-op if it never opened).
@@ -203,6 +209,18 @@ def grab_full_res_frame(
         focus=focus,
     )
     return frame, stream_cap
+
+
+def _fit_within(w: int, h: int, max_w: int, max_h: int) -> tuple[int, int]:
+    """Scale ``(w, h)`` down to fit within ``(max_w, max_h)`` preserving aspect; never upscales.
+
+    Returns the size unchanged if it already fits (or is degenerate). Used to bound the *initial*
+    window size only -- the window stays resizable.
+    """
+    if w <= 0 or h <= 0:
+        return w, h
+    scale = min(max_w / w, max_h / h, 1.0)
+    return max(1, round(w * scale)), max(1, round(h * scale))
 
 
 def _letterbox(frame: np.ndarray, win_w: int, win_h: int) -> np.ndarray:
@@ -384,6 +402,7 @@ class WebcamPreview:
         # displayed frame (the ROI's reference size when cropping, else the camera's native size).
         disp_w = self._roi.ref_w if self._roi is not None else self.width
         disp_h = self._roi.ref_h if self._roi is not None else self.height
+        disp_w, disp_h = _fit_within(disp_w, disp_h, _MAX_INITIAL_WIN_W, _MAX_INITIAL_WIN_H)
         cv2.namedWindow(self._title, cv2.WINDOW_NORMAL)
         if disp_w > 0 and disp_h > 0:
             cv2.resizeWindow(self._title, disp_w, disp_h)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from arm101_hand.system_camera.preview import _letterbox
+from arm101_hand.system_camera.preview import _fit_within, _letterbox
 
 
 def _white(w: int, h: int) -> np.ndarray:
@@ -44,3 +44,23 @@ def test_content_preserves_source_aspect():
     content_w = cols.max() - cols.min() + 1
     content_h = rows.max() - rows.min() + 1
     assert abs(content_w / content_h - 640 / 480) < 0.02
+
+
+def test_fit_within_unchanged_when_already_fits():
+    # 640x480 is under the 960x720 cap -> returned unchanged (ROI consumers unaffected).
+    assert _fit_within(640, 480, 960, 720) == (640, 480)
+
+
+def test_fit_within_scales_down_preserving_aspect():
+    # 2592x1944 (4:3) scaled to fit 960x720 -> exactly 960x720, same aspect.
+    assert _fit_within(2592, 1944, 960, 720) == (960, 720)
+
+
+def test_fit_within_never_upscales():
+    # A frame smaller than the cap is never enlarged.
+    assert _fit_within(320, 240, 960, 720) == (320, 240)
+
+
+def test_fit_within_handles_zero():
+    # Degenerate size (camera not ready) returns unchanged, no divide-by-zero.
+    assert _fit_within(0, 0, 960, 720) == (0, 0)
