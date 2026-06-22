@@ -12,7 +12,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       # uv sync builds lerobot as an editable path dependency
       # (pyproject: lerobot = { path = "references/lerobot", editable = true }),
