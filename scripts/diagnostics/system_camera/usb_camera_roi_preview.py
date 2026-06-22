@@ -14,11 +14,10 @@ Two windows open (both letterboxed, never stretched on resize):
   * "<title> -- full frame" the full camera frame with the ROI rectangle drawn, so you can see
                             exactly what is being cropped against the whole scene.
 
-Press SPACE to save the framed shot: the ROI zoom (640x480) plus a full-resolution ROI crop -- the
-same screen region cropped from a 4000x3000 grab (~1225x919) -- so you keep a sharp high-res zoom of
-the Aurora screen. The full-res grab reopens the device (preview freezes ~1-2 s) exactly like
-``usb_camera_capture.py`` (``grab_full_res_frame``); focus is held through the reopen so the crop
-stays sharp. Both files share a timestamp; the ``<w>x<h>`` suffix tells them apart.
+Press SPACE to save the framed shot: the ROI zoom (640x480) plus the native-resolution ROI crop
+taken straight from the live frame -- at the configured 2592x1944 stream that crop is ~794x595 real
+pixels, as sharp as the operating path gets, with no device reopen and no preview freeze. Both files
+share a timestamp; the ``<w>x<h>`` suffix tells them apart.
 
 Single-threaded by design (like ``usb_camera_capture.py``): this tool reads + shows frames itself
 and polls the TERMINAL for keys via ``msvcrt.kbhit`` -- it can't block on ``getwch`` because the
@@ -34,8 +33,7 @@ Usage:
 
 Keys (focus the TERMINAL, not the windows):
   SPACE   save TWO paired images to --out-dir: the ROI zoom roi_<ts>_640x480.jpg
-          + a full-res ROI crop roi_<ts>_<w>x<h>.jpg (same <ts>)
-          (preview freezes ~1-2 s while the device reopens at full res, then resumes)
+          + the native-res ROI crop roi_<ts>_<w>x<h>.jpg (same <ts>), cropped from the live frame
   q/ESC   quit (Ctrl+C also works)
 """
 
@@ -56,9 +54,9 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 from arm101_hand.config import load_system_camera_config  # noqa: E402
 from arm101_hand.system_camera import (  # noqa: E402
     AURORA_SCREEN_ROI,
-    grab_full_res_frame,
     imshow_fit,
     open_capture,
+    resolution_mismatch_warning,
 )
 
 _CONFIG_PATH = _REPO_ROOT / "src" / "arm101_hand" / "data" / "system_camera_config.yaml"
@@ -159,6 +157,9 @@ def main() -> int:
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    clamp_warn = resolution_mismatch_warning(cfg.width, cfg.height, width, height)
+    if clamp_warn:
+        print(clamp_warn, file=sys.stderr)
     src_fps = cap.get(cv2.CAP_PROP_FPS)
     rx, ry, rw, rh = _ROI.for_frame(width, height)
     # Read back what the device actually accepted -- the requested focus only proves we ASKED.
@@ -243,41 +244,15 @@ def main() -> int:
             key = _poll_key()
             if key in ("q", "Q", "\x1b"):  # q / ESC
                 break
-            if key == " ":  # SPACE -> save the ROI zoom NOW + a full-res ROI crop (preview freezes ~1-2s)
+            if key == " ":  # SPACE -> save the ROI zoom + the native-res ROI crop from the live frame
                 out_dir.mkdir(parents=True, exist_ok=True)
                 ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # shared stem pairs both files
                 if _write_image(out_dir, ts, zoom):  # the 640x480 ROI zoom shown above
                     saved += 1
-                print("  capturing full-res ROI crop (reopening at full res; hold steady) ...")
-                still, cap = grab_full_res_frame(
-                    cap,
-                    camera_index,
-                    backend,
-                    fourcc=cfg.fourcc,
-                    still_width=cfg.still_width,
-                    still_height=cfg.still_height,
-                    stream_width=cfg.width,
-                    stream_height=cfg.height,
-                    autofocus=cfg.autofocus,
-                    focus=cfg.focus,
-                )
-                if still is not None:
-                    fh, fw = still.shape[:2]
-                    if _write_image(out_dir, ts, _ROI.crop(still)):  # ROI region at full-res scale
-                        saved += 1
-                    if cfg.still_width and fw < cfg.still_width:
-                        print(
-                            f"  NOTE: full-res grab came back {fw}x{fh}, below the requested "
-                            f"{cfg.still_width}x{cfg.still_height} -- raise warmup_frames in "
-                            "grab_full_res_frame if this persists.",
-                            file=sys.stderr,
-                        )
-                else:
-                    print("  WARNING: full-res grab returned no frame.", file=sys.stderr)
-                if not cap.isOpened():
-                    print("  ERROR: camera did not reopen after the grab -- stopping.", file=sys.stderr)
-                    break
-                last_good = time.monotonic()  # the fresh stream cap is healthy; reset the stall clock
+                # Native-res ROI crop straight from the live frame: the stream is already 5 MP, so
+                # this is as sharp as the operating path gets -- no device reopen, no preview freeze.
+                if _write_image(out_dir, ts, _ROI.crop(frame)):  # ~794x595 at a 2592x1944 stream
+                    saved += 1
     except KeyboardInterrupt:
         print("\n^C")
     finally:
