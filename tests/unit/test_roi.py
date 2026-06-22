@@ -1,6 +1,6 @@
 import numpy as np
 
-from arm101_hand.system_camera import Roi
+from arm101_hand.system_camera import AURORA_SCREEN_ROI, Roi
 
 
 def _frame(w: int, h: int) -> np.ndarray:
@@ -38,3 +38,12 @@ def test_crop_shape_matches_for_frame():
     assert roi.crop(_frame(640, 480)).shape == (210, 280, 3)
     # Scaled frame: crop shape tracks the rescaled ROI (h, w from for_frame).
     assert roi.crop(_frame(1280, 960)).shape == (420, 560, 3)
+
+
+def test_aurora_roi_downscales_at_2592x1944():
+    # The 2592x1944 stream (system_camera_config.yaml) makes the ROI crop LARGER than the 640x480
+    # reference, so the resize-to-reference is a DOWNSCALE -- real pixels, no upscale. This is the
+    # whole point of the 2K stream; it locks the for_frame numbers the config relies on.
+    x, y, w, h = AURORA_SCREEN_ROI.for_frame(2592, 1944)
+    assert (x, y, w, h) == (243, 304, 794, 595)
+    assert w >= AURORA_SCREEN_ROI.ref_w and h >= AURORA_SCREEN_ROI.ref_h  # no upscale in either axis

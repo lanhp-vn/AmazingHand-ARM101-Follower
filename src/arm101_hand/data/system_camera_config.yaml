@@ -18,17 +18,21 @@ focus: 600
 record_dir: media_outputs/camera_recordings   # repo-relative; 'r' writes usb_cam_<timestamp>.avi here
 fps: null           # null -> camera-reported fps (fallback 20)
 # This cam = IFWATER IF-USB12MP02AF (IMX362, USB 2.0): 4000x3000 max still, MJPG-only for hi-res
-# (YUY2 is uncompressed + capped low). MJPG also lets the low-res stream run at a high frame rate.
+# (YUY2 is uncompressed + capped low). MJPG also lets the 5 MP stream run at a usable frame rate.
 #
-# DECOUPLED: the LIVE stream (width/height, used by the preview + recording everywhere) is kept
-# small for a smooth feed; usb_camera_capture briefly reopens the device at the STILL size for one
-# SPACE grab, then resumes the stream -- so framing stays smooth while saved stills are full 12 MP.
-# (MSMF can't switch resolution on an open capture, so the grab reopens rather than switching it.)
-# (The demos film the Aurora screen only; they never save a USB-cam still, just the stream.)
+# The LIVE stream (width/height) runs at 2592x1944 (5 MP, 4:3) -- used by the preview, recording, AND
+# arc detection everywhere. The fixed ROI is ~30.6% of the frame, so at this size it crops to ~794x595
+# REAL pixels and DOWNSCALES to the 640x480 ROI reference (roi.py): no upscale, real optical detail
+# for detection. The preview window, recording, and detection frame all stay 640x480 (the ROI
+# reference) regardless of stream size. Expect ~15 fps over USB 2.0 -- the Aurora screen is static, so
+# that is smooth enough. (If 2592x1944 is unsupported or too slow on the bench, fall back to 2048x1536
+# -- accepts a ~2% residual upscale.) usb_camera_capture still reopens the device at the STILL size
+# (4000x3000) for its 12 MP SPACE grab, then resumes the stream; the demos never save a USB-cam still.
+# (MSMF can't switch resolution on an open capture, so that grab reopens rather than switching it.)
 # Set any of these to null to request the driver's max instead (it clamps a large request down).
 fourcc: MJPG
-width: 640          # live stream: smooth ~60 fps; matches the ROI reference size exactly
-height: 480
+width: 2592         # live stream @ 5 MP 4:3 -> ROI crop ~794x595 real px -> downscale to 640x480 ref
+height: 1944
 still_width: 4000   # full-res SPACE grab in usb_camera_capture (12 MP), then back to the stream res
 still_height: 3000
 # --- Automated trigger (grab_auto_trigger_analysis.py) -------------------------------------------

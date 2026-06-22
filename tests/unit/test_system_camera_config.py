@@ -102,8 +102,9 @@ def test_data_yaml_loads():
     # dshow is REQUIRED: manual focus only drives the VCM on the DSHOW backend (MSMF ignores it).
     assert cfg.backend == "dshow"
     assert cfg.enabled is True
-    # Smooth live stream (640x480) decoupled from the full 12 MP still grab (4000x3000), MJPG.
-    assert (cfg.width, cfg.height) == (640, 480)
+    # Live stream 2592x1944 (5 MP) -> ROI crops real px, downscaled to the 640x480 ref (no upscale);
+    # decoupled from the full 12 MP still grab (4000x3000), MJPG.
+    assert (cfg.width, cfg.height) == (2592, 1944)
     assert (cfg.still_width, cfg.still_height) == (4000, 3000)
     assert cfg.fourcc == "MJPG"
     # Manual focus locked at the value the focus probe found (autofocus off so it never breathes).
