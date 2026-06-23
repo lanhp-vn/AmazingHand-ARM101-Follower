@@ -12,10 +12,16 @@ Rectangle detection adapts references/computer-vision/opencv/samples/python/squa
 
 from __future__ import annotations
 
+import io
+from pathlib import Path
+
 import cv2
 import numpy as np
+import yaml
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
 
-from arm101_hand.config.system_camera_config import HsvBand, RoiBox
+from arm101_hand.config.system_camera_config import HsvBand, RoiBox, SystemCameraConfig
 
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -173,3 +179,57 @@ def suggest_coverage_threshold(
 ) -> float:
     """Midpoint between the green-frame (high) and red-frame (low) green coverage, floored."""
     return round(max((green_cov_on_green + green_cov_on_red) / 2.0, floor), 4)
+
+
+def _flow_map(d: dict[str, int]) -> CommentedMap:
+    """A ruamel mapping rendered inline ``{a: 1, b: 2}`` to match the file's arc/band style."""
+    m = CommentedMap(d)
+    m.fa.set_flow_style()
+    return m
+
+
+def _roibox_map(r: RoiBox) -> CommentedMap:
+    return _flow_map({"x": r.x, "y": r.y, "w": r.w, "h": r.h, "ref_w": r.ref_w, "ref_h": r.ref_h})
+
+
+def _hsv_map(b: HsvBand) -> CommentedMap:
+    return _flow_map(
+        {"h_lo": b.h_lo, "s_lo": b.s_lo, "v_lo": b.v_lo, "h_hi": b.h_hi, "s_hi": b.s_hi, "v_hi": b.v_hi}
+    )
+
+
+def write_calibration_values(
+    config_path: Path,
+    *,
+    screen_roi: RoiBox,
+    left_arc: RoiBox,
+    right_arc: RoiBox,
+    red_bands: list[HsvBand],
+    green_bands: list[HsvBand],
+    coverage_threshold: float,
+) -> None:
+    """Round-trip ``system_camera_config.yaml`` (preserving comments), updating screen_roi + the
+    auto_trigger regions/bands/threshold. Validates the result via pydantic and writes a ``.bak``
+    copy BEFORE touching the original; raises (without writing) if validation fails."""
+    yaml_rt = YAML()  # round-trip mode preserves comments + key order
+    yaml_rt.preserve_quotes = True
+    data = yaml_rt.load(config_path.read_text(encoding="utf-8"))
+
+    data["screen_roi"] = _roibox_map(screen_roi)
+    at = data["auto_trigger"]
+    at["left_arc"] = _roibox_map(left_arc)
+    at["right_arc"] = _roibox_map(right_arc)
+    at["red_bands"] = [_hsv_map(b) for b in red_bands]
+    at["green_bands"] = [_hsv_map(b) for b in green_bands]
+    at["coverage_threshold"] = float(coverage_threshold)
+
+    # Validate the would-be file via pydantic BEFORE writing (plain safe_load of the dumped text).
+    buf = io.StringIO()
+    yaml_rt.dump(data, buf)
+    SystemCameraConfig.model_validate(yaml.safe_load(buf.getvalue()))
+
+    config_path.with_suffix(config_path.suffix + ".bak").write_text(
+        config_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml_rt.dump(data, f)

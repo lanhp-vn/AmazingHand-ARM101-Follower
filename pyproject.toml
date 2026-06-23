@@ -11,6 +11,7 @@ dependencies = [
     "pydantic>=2.0",
     "opencv-python>=4.9",  # full build (HighGUI) for the live USB-camera preview; see [tool.uv] below
     "timm>=1.0,<1.1",  # ViT-L/16 builder for RETFound DR-grading inference (exact 296-key match verified)
+    "ruamel-yaml>=0.18",
 ]
 
 [project.optional-dependencies]

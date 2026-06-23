@@ -1,14 +1,22 @@
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
+from arm101_hand.config import load_system_camera_config
+from arm101_hand.config.system_camera_config import HsvBand, RoiBox
 from arm101_hand.system_camera.calibration import (
     detect_arc_regions,
     detect_screen_rect,
     sample_hsv_band,
     suggest_coverage_threshold,
     to_roi_candidate,
+    write_calibration_values,
 )
+
+_DATA = Path(__file__).resolve().parents[2] / "src" / "arm101_hand" / "data" / "system_camera_config.yaml"
 
 
 def test_detect_screen_rect_ranks_screen_above_distractor():
@@ -75,3 +83,45 @@ def test_sample_hsv_band_red_splits_on_hue_wrap():
 def test_suggest_coverage_threshold_midpoint_and_floor():
     assert suggest_coverage_threshold(0.20, 0.0) == 0.10
     assert suggest_coverage_threshold(0.02, 0.0) == 0.02  # midpoint 0.01 floored to 0.02
+
+
+def test_write_calibration_preserves_comments_and_updates(tmp_path):
+    dst = tmp_path / "system_camera_config.yaml"
+    dst.write_text(_DATA.read_text(encoding="utf-8"), encoding="utf-8")
+
+    write_calibration_values(
+        dst,
+        screen_roi=RoiBox(x=150, y=188, w=490, h=368, ref_w=1600, ref_h=1200),
+        left_arc=RoiBox(x=50, y=100, w=80, h=200),
+        right_arc=RoiBox(x=410, y=100, w=80, h=200),
+        red_bands=[HsvBand(h_lo=0, s_lo=90, v_lo=90, h_hi=8, s_hi=255, v_hi=255)],
+        green_bands=[HsvBand(h_lo=45, s_lo=60, v_lo=70, h_hi=85, s_hi=255, v_hi=255)],
+        coverage_threshold=0.09,
+    )
+
+    text = dst.read_text(encoding="utf-8")
+    assert "Automated trigger" in text  # a block comment survived the round-trip
+    assert dst.with_suffix(".yaml.bak").exists()  # backup written
+
+    cfg = load_system_camera_config(dst)
+    assert (cfg.screen_roi.x, cfg.screen_roi.ref_w) == (150, 1600)
+    assert (cfg.auto_trigger.left_arc.x, cfg.auto_trigger.right_arc.x) == (50, 410)
+    assert cfg.auto_trigger.coverage_threshold == 0.09
+    assert len(cfg.auto_trigger.red_bands) == 1 and cfg.auto_trigger.green_bands[0].h_lo == 45
+
+
+def test_write_calibration_rejects_invalid_without_writing(tmp_path):
+    dst = tmp_path / "system_camera_config.yaml"
+    dst.write_text(_DATA.read_text(encoding="utf-8"), encoding="utf-8")
+    before = dst.read_text(encoding="utf-8")
+    with pytest.raises(ValidationError):
+        write_calibration_values(
+            dst,
+            screen_roi=RoiBox(x=0, y=0, w=1, h=1),
+            left_arc=RoiBox(x=0, y=0, w=1, h=1),
+            right_arc=RoiBox(x=0, y=0, w=1, h=1),
+            red_bands=[],  # empty -> invalid (auto-trigger needs >=1 red band for classification)
+            green_bands=[],  # empty -> invalid
+            coverage_threshold=5.0,  # out of [0,1] -> pydantic ValidationError
+        )
+    assert dst.read_text(encoding="utf-8") == before  # original untouched on failure
