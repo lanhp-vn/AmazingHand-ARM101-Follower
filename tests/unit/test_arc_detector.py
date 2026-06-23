@@ -34,3 +34,19 @@ def test_detect_both_clear_on_blank():
     frame = np.zeros((480, 800, 3), dtype=np.uint8)  # nothing red
     s = detect(frame, _cfg())
     assert s.both_clear is True
+
+
+def test_detect_respects_coverage_threshold():
+    # Pin the coverage gate itself (lc >= threshold), not just saturated/blank extremes: paint the
+    # left arc band ~10% red (below the 0.2 threshold -> not red) then ~40% (above -> red).
+    cfg = _cfg()  # coverage_threshold=0.2
+    arc = cfg.left_arc
+
+    def left_red_for(fill: float) -> bool:
+        frame = np.zeros((480, 800, 3), dtype=np.uint8)
+        rows = int(fill * arc.h)
+        frame[arc.y : arc.y + rows, arc.x : arc.x + arc.w] = _RED
+        return detect(frame, cfg).left_red
+
+    assert left_red_for(0.10) is False  # 10% red < 0.2 threshold
+    assert left_red_for(0.40) is True  # 40% red > 0.2 threshold

@@ -1,7 +1,8 @@
 """Pure detection helpers for the system-camera view calibration (device layer).
 
-Re-derives the Aurora screen ROI, the two alignment-arc regions, and the red/green HSV bands
-from three sample frames (white startup screen, red arcs, green arcs). Pure numpy + cv2 imgproc
+Re-derives the Aurora screen ROI (deskewed to an upright 5:3 crop), the two mirror-symmetric
+alignment-arc bands on the camera circle, and the red HSV band(s) from three sample frames
+(white startup screen, red/misaligned arcs, bright/aligned screen). Pure numpy + cv2 imgproc
 -- no HighGUI window; the one I/O function is ``write_calibration_values`` (ruamel round-trip).
 Synthetic-numpy unit-testable, mirroring ``arc_detector.py``. The interactive capture/confirm
 shell lives in ``scripts/calibration/system_camera/calibrate_view.py``.

@@ -87,15 +87,23 @@ def test_roi_angle_zero_crop_is_plain_slice():
 def test_roi_deskew_uprights_a_tilted_rect():
     import cv2
 
-    # a white rect tilted +10deg on black; cropping with angle=+10 should deskew it upright so the
-    # crop is (almost) all white (the rect fills the crop after rotation).
+    # A white rect tilted +20deg on black, the same size as the crop. Deskewing by +20 about the box
+    # centre brings the rect axis-aligned so the crop is essentially all white. We ALSO assert the
+    # deskew did real work vs the un-rotated slice, so a no-op rotation (plain slice for angle!=0) or a
+    # wrong-sign deskew is caught -- both leave black wedges in the corners. Measured on this OpenCV:
+    # deskewed ~1.00, plain ~0.86, wrong-sign ~0.77 (see scripts: a 10deg rect was already 0.92, too
+    # loose to discriminate, hence 20deg + the delta assertion).
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    box = cv2.boxPoints(((320, 240), (200, 120), 10.0)).astype(np.int32)
+    box = cv2.boxPoints(((320.0, 240.0), (200.0, 120.0), 20.0)).astype(np.int32)
     cv2.fillPoly(frame, [box], (255, 255, 255))
-    roi = Roi(x=220, y=180, w=200, h=120, ref_w=640, ref_h=480, angle=10.0)
-    crop = roi.crop(frame)
-    white_frac = (crop.reshape(-1, 3).min(axis=1) > 200).mean()
-    assert white_frac > 0.9  # deskewed crop is essentially the upright white rect
+
+    def white_frac(crop: np.ndarray) -> float:
+        return float((crop.reshape(-1, 3).min(axis=1) > 200).mean())
+
+    deskewed = white_frac(Roi(x=220, y=180, w=200, h=120, ref_w=640, ref_h=480, angle=20.0).crop(frame))
+    plain = white_frac(Roi(x=220, y=180, w=200, h=120, ref_w=640, ref_h=480, angle=0.0).crop(frame))
+    assert deskewed > 0.98  # deskewed crop is essentially the upright white rect
+    assert deskewed - plain > 0.1  # the deskew did real work (catches a no-op / wrong-sign rotation)
 
 
 def test_roi_from_region_carries_angle():
