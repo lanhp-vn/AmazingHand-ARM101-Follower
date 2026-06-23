@@ -198,15 +198,14 @@ def arc_bands_from_circle(
     return left, right
 
 
-# Broad colour priors used to FIND candidate arc pixels before percentile sampling tightens the
+# Broad colour prior used to FIND candidate red arc pixels before percentile sampling tightens the
 # band. Deliberately GENEROUS on saturation/value: the Aurora alignment arcs are PALE (low-S) and
 # bright, sitting over a tinted near-white disc -- bench captures measured red arcs at S~50 V~227
-# hue~170 and green arcs at S~37 V~255 hue~90, so tight S/V floors miss them. Red wraps hue 0/180.
+# hue~170, so tight S/V floors miss them. Red wraps hue 0/180 -> two bands.
 _RED_PRIOR: list[HsvBand] = [
     HsvBand(h_lo=0, s_lo=35, v_lo=50, h_hi=12, s_hi=255, v_hi=255),
     HsvBand(h_lo=158, s_lo=35, v_lo=50, h_hi=180, s_hi=255, v_hi=255),
 ]
-_GREEN_PRIOR: list[HsvBand] = [HsvBand(h_lo=45, s_lo=35, v_lo=60, h_hi=100, s_hi=255, v_hi=255)]
 
 
 def _prior_mask(hsv: np.ndarray, bands: list[HsvBand]) -> np.ndarray:
@@ -220,24 +219,15 @@ def _prior_mask(hsv: np.ndarray, bands: list[HsvBand]) -> np.ndarray:
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
 
 
-def sample_hsv_band(
-    region_bgr: np.ndarray, color: str, *, lo_pct: float = 5, hi_pct: float = 95
-) -> list[HsvBand]:
-    """Bracket the matched pixels' HSV percentiles into 1 band (green) or up to 2 (red hue-wrap).
-
-    ``color`` is ``"red"`` or ``"green"``. Raises ``ValueError`` if no pixels match the prior."""
+def sample_red_band(region_bgr: np.ndarray, *, lo_pct: float = 5, hi_pct: float = 95) -> list[HsvBand]:
+    """Percentile-bracket the red arc pixels into 1-2 bands (0/180 hue wrap). Raises if none match."""
     hsv = cv2.cvtColor(region_bgr, cv2.COLOR_BGR2HSV)
-    prior = _RED_PRIOR if color == "red" else _GREEN_PRIOR
-    pts = hsv[_prior_mask(hsv, prior) > 0]
+    pts = hsv[_prior_mask(hsv, _RED_PRIOR) > 0]
     if pts.size == 0:
-        raise ValueError(f"no {color} pixels to sample in this region")
+        raise ValueError("no red pixels to sample in this region")
     s_lo = int(np.percentile(pts[:, 1], lo_pct))
     v_lo = int(np.percentile(pts[:, 2], lo_pct))
     hue = pts[:, 0]
-    if color == "green":
-        h_lo = int(np.percentile(hue, lo_pct))
-        h_hi = int(np.percentile(hue, hi_pct))
-        return [HsvBand(h_lo=h_lo, s_lo=s_lo, v_lo=v_lo, h_hi=h_hi, s_hi=255, v_hi=255)]
     bands: list[HsvBand] = []
     near_zero = hue[hue <= 90]
     near_180 = hue[hue > 90]
@@ -257,13 +247,13 @@ def sample_hsv_band(
 
 
 def suggest_coverage_threshold(
-    green_cov_on_green: float, green_cov_on_red: float, *, floor: float = 0.02
+    red_cov_on_red: float, red_cov_on_bright: float, *, floor: float = 0.02
 ) -> float:
-    """Midpoint between the green-frame (high) and red-frame (low) green coverage, floored."""
-    return round(max((green_cov_on_green + green_cov_on_red) / 2.0, floor), 4)
+    """Midpoint between the red-frame (high) and bright-frame (low) red coverage, floored."""
+    return round(max((red_cov_on_red + red_cov_on_bright) / 2.0, floor), 4)
 
 
-def _flow_map(d: dict[str, int]) -> CommentedMap:
+def _flow_map(d: dict[str, float]) -> CommentedMap:
     """A ruamel mapping rendered inline ``{a: 1, b: 2}`` to match the file's arc/band style."""
     m = CommentedMap(d)
     m.fa.set_flow_style()
@@ -271,7 +261,9 @@ def _flow_map(d: dict[str, int]) -> CommentedMap:
 
 
 def _roibox_map(r: RoiBox) -> CommentedMap:
-    return _flow_map({"x": r.x, "y": r.y, "w": r.w, "h": r.h, "ref_w": r.ref_w, "ref_h": r.ref_h})
+    return _flow_map(
+        {"x": r.x, "y": r.y, "w": r.w, "h": r.h, "ref_w": r.ref_w, "ref_h": r.ref_h, "angle": r.angle}
+    )
 
 
 def _hsv_map(b: HsvBand) -> CommentedMap:
@@ -287,12 +279,11 @@ def write_calibration_values(
     left_arc: RoiBox,
     right_arc: RoiBox,
     red_bands: list[HsvBand],
-    green_bands: list[HsvBand],
     coverage_threshold: float,
 ) -> None:
     """Round-trip ``system_camera_config.yaml`` (preserving comments), updating screen_roi + the
-    auto_trigger regions/bands/threshold. Validates the result via pydantic and writes a ``.bak``
-    copy BEFORE touching the original; raises (without writing) if validation fails."""
+    auto_trigger arc regions / red bands / threshold. Validates the result via pydantic and writes a
+    ``.bak`` copy BEFORE touching the original; raises (without writing) if validation fails."""
     yaml_rt = YAML()  # round-trip mode preserves comments + key order
     yaml_rt.preserve_quotes = True
     data = yaml_rt.load(config_path.read_text(encoding="utf-8"))
@@ -302,7 +293,6 @@ def write_calibration_values(
     at["left_arc"] = _roibox_map(left_arc)
     at["right_arc"] = _roibox_map(right_arc)
     at["red_bands"] = [_hsv_map(b) for b in red_bands]
-    at["green_bands"] = [_hsv_map(b) for b in green_bands]
     at["coverage_threshold"] = float(coverage_threshold)
 
     # Validate the would-be file via pydantic BEFORE writing (plain safe_load of the dumped text).

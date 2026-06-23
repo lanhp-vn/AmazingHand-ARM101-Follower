@@ -11,7 +11,7 @@ from arm101_hand.system_camera.calibration import (
     arc_bands_from_circle,
     detect_screen_rects,
     fit_camera_circle,
-    sample_hsv_band,
+    sample_red_band,
     screen_roi_from_rect,
     suggest_coverage_threshold,
     write_calibration_values,
@@ -57,24 +57,13 @@ def test_arc_bands_from_circle_are_symmetric():
     assert abs(right.x - (800 - (left.x + left.w))) <= 1  # mirror across centre
 
 
-def test_sample_hsv_band_green_brackets_the_hue():
-    region = np.zeros((40, 40, 3), dtype=np.uint8)
-    region[:] = (0, 255, 0)  # BGR green -> HSV hue 60
-    bands = sample_hsv_band(region, "green")
-    assert len(bands) == 1
-    assert bands[0].h_lo <= 60 <= bands[0].h_hi
-
-
-def test_sample_hsv_band_red_splits_on_hue_wrap():
+def test_sample_red_band_brackets_and_wraps():
     hsv = np.zeros((20, 20, 3), dtype=np.uint8)
     hsv[:, :10] = (2, 200, 200)  # near hue 0
     hsv[:, 10:] = (178, 200, 200)  # near hue 180
-    region = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    bands = sample_hsv_band(region, "red")
+    bands = sample_red_band(cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR))
     assert len(bands) == 2
-    # The two bands must actually bracket the 0/180 hue wrap: one anchored at 0, one at 180.
-    assert any(b.h_lo == 0 for b in bands)
-    assert any(b.h_hi == 180 for b in bands)
+    assert any(b.h_lo == 0 for b in bands) and any(b.h_hi == 180 for b in bands)
 
 
 def test_suggest_coverage_threshold_midpoint_and_floor():
@@ -87,26 +76,20 @@ def test_suggest_coverage_threshold_midpoint_and_floor():
 def test_write_calibration_preserves_comments_and_updates(tmp_path):
     dst = tmp_path / "system_camera_config.yaml"
     dst.write_text(_DATA.read_text(encoding="utf-8"), encoding="utf-8")
-
     write_calibration_values(
         dst,
-        screen_roi=RoiBox(x=150, y=188, w=490, h=368, ref_w=1600, ref_h=1200),
-        left_arc=RoiBox(x=50, y=100, w=80, h=200),
-        right_arc=RoiBox(x=410, y=100, w=80, h=200),
-        red_bands=[HsvBand(h_lo=0, s_lo=90, v_lo=90, h_hi=8, s_hi=255, v_hi=255)],
-        green_bands=[HsvBand(h_lo=45, s_lo=60, v_lo=70, h_hi=85, s_hi=255, v_hi=255)],
-        coverage_threshold=0.09,
+        screen_roi=RoiBox(x=10, y=8, w=400, h=240, ref_w=800, ref_h=480, angle=-0.9),
+        left_arc=RoiBox(x=90, y=130, w=70, h=230, ref_w=800, ref_h=480),
+        right_arc=RoiBox(x=640, y=130, w=70, h=230, ref_w=800, ref_h=480),
+        red_bands=[HsvBand(h_lo=0, s_lo=40, v_lo=50, h_hi=10, s_hi=255, v_hi=255)],
+        coverage_threshold=0.08,
     )
-
     text = dst.read_text(encoding="utf-8")
-    assert "Automated trigger" in text  # a block comment survived the round-trip
-    assert dst.with_suffix(".yaml.bak").exists()  # backup written
-
+    assert "Automated trigger" in text and dst.with_suffix(".yaml.bak").exists()
     cfg = load_system_camera_config(dst)
-    assert (cfg.screen_roi.x, cfg.screen_roi.ref_w) == (150, 1600)
-    assert (cfg.auto_trigger.left_arc.x, cfg.auto_trigger.right_arc.x) == (50, 410)
-    assert cfg.auto_trigger.coverage_threshold == 0.09
-    assert len(cfg.auto_trigger.red_bands) == 1 and cfg.auto_trigger.green_bands[0].h_lo == 45
+    assert cfg.screen_roi.angle == -0.9 and (cfg.screen_roi.ref_w, cfg.screen_roi.ref_h) == (800, 480)
+    assert cfg.auto_trigger.coverage_threshold == 0.08
+    assert (cfg.auto_trigger.left_arc.x, cfg.auto_trigger.right_arc.x) == (90, 640)
 
 
 def test_write_calibration_rejects_invalid_without_writing(tmp_path):
@@ -120,7 +103,6 @@ def test_write_calibration_rejects_invalid_without_writing(tmp_path):
             left_arc=RoiBox(x=0, y=0, w=1, h=1),
             right_arc=RoiBox(x=0, y=0, w=1, h=1),
             red_bands=[],  # empty -> rejected by the min_length=1 guard (a degenerate config)
-            green_bands=[],  # empty -> rejected too
             coverage_threshold=0.5,  # VALID: empty bands are the sole cause of rejection here
         )
     assert dst.read_text(encoding="utf-8") == before  # original untouched on failure
