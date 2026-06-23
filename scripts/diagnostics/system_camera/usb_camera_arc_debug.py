@@ -17,14 +17,15 @@ The arm + hand buses are opened/closed solely by ``run_grab_demo`` (one owner pe
 tool opens only the USB camera. All motion is the defined staged sequence; on exit torque is released
 in place (or reversed only on explicit 'h' at the prompt) -- no surprise movement.
 
-SPACE saves one "case" -- three files sharing a millisecond-timestamp stem ``arc_<ts>`` in
-``--out-dir`` (default ``media_outputs/arc_debug/``, git-ignored):
+SPACE prompts (in the TERMINAL) for a short note describing what is WRONG with the detector's call
+on this frame, then saves one "case" -- three files sharing a millisecond-timestamp stem ``arc_<ts>``
+in ``--out-dir`` (default ``media_outputs/arc_debug/``, git-ignored):
   * ``arc_<ts>_clean.png``      the un-annotated 800x480 ROI -- ground truth, re-feedable to detect()
                                 / calibrate_view.py --from-files.
   * ``arc_<ts>_annotated.png``  the ROI with arc boxes + verdict HUD burned in.
   * ``arc_<ts>.json``           the numbers the detector saw: per-arc coverage + verdict, the
                                 threshold, the red bands, the exact ROI/arc geometry used, camera
-                                metadata, and an empty ``expected_note`` for you to fill in later.
+                                metadata, and your ``expected_note`` (Enter at the prompt = empty).
 
 The full ``opencv-python`` wheel is required for the window (lerobot's headless build has no HighGUI;
 ``pyproject.toml`` drops the headless pin). Focus is locked per ``system_camera_config.yaml``
@@ -35,7 +36,7 @@ Usage:
       [--camera N] [--backend auto|dshow] [--out-dir DIR]
 
 Keys (focus the TERMINAL, not the window):
-  SPACE     save one case (clean + annotated + sidecar) to --out-dir
+  SPACE     prompt for a note, then save one case (clean + annotated + sidecar) to --out-dir
   q / ESC   quit the loop -> arm/hand exit prompt (Enter releases in place, 'h' reverses)
   Ctrl+C    same as q
 """
@@ -88,13 +89,15 @@ def build_arc_case_sidecar(
     frame_w: int,
     frame_h: int,
     captured_at: _dt.datetime,
+    expected_note: str = "",
 ) -> dict[str, object]:
     """Assemble the JSON-serializable sidecar dict for one saved arc-debug case.
 
     Pure (no cv2, no I/O): records what ``detect()`` saw -- per-arc coverage + verdict, the
     threshold, the red bands, and the exact ROI/arc geometry that produced the classification --
-    plus camera metadata and an empty operator-fillable ``expected_note``. ``captured_at`` is
-    injected (not read from the clock) so the function is deterministic + unit-testable.
+    plus camera metadata and the operator's ``expected_note`` (what is actually wrong with the
+    detector's call, typed at capture time; empty string if skipped). ``captured_at`` is injected
+    (not read from the clock) so the function is deterministic + unit-testable.
     """
     return {
         "tool": "usb_camera_arc_debug",
@@ -119,7 +122,7 @@ def build_arc_case_sidecar(
         "right_arc": cfg.right_arc.model_dump(),
         "red_bands": [b.model_dump() for b in cfg.red_bands],
         "morph_kernel": cfg.morph_kernel,
-        "expected_note": "",
+        "expected_note": expected_note,
     }
 
 
@@ -187,6 +190,26 @@ def _save_case(
     return False
 
 
+def _prompt_note(alignment: AlignmentState) -> str:
+    """Block briefly to read an operator note for the just-captured case from the TERMINAL.
+
+    Called right after SPACE: the cv2 window freezes during this ``input()`` -- intended, the arm
+    holds grab under torque and the paused frame is the one you are describing. The current verdict
+    is echoed so you can record what it SHOULD have been (the goal of the whole tool). Enter with no
+    text leaves the note empty (label-later still works). EOF (piped/closed stdin) -> empty note.
+    """
+    verdict = (
+        f"L:{'RED' if alignment.left_red else 'clr'} "
+        f"R:{'RED' if alignment.right_red else 'clr'} "
+        f"both_red={alignment.both_red}"
+    )
+    try:
+        note = input(f"  note for this case (detector said {verdict}) -- Enter to skip: ")
+    except EOFError:
+        return ""
+    return note.strip()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
@@ -249,7 +272,7 @@ def main() -> int:
             f"Live arc overlay: {width}x{height} stream, cropped to a {roi.w}x{roi.h} deskewed ROI "
             f"(angle {roi.angle:+.2f} deg). Boxes: RED verdict=red, clear=green. coverage_threshold="
             f"{acfg.coverage_threshold:.3f}.\n"
-            "Keys (focus THIS terminal): SPACE = save case, q/ESC = quit."
+            "Keys (focus THIS terminal): SPACE = note + save case, q/ESC = quit."
         )
 
         started = time.monotonic()
@@ -294,8 +317,9 @@ def main() -> int:
                 key = _poll_key()
                 if key in ("q", "Q", "\x1b"):  # q / ESC
                     break
-                if key == " ":  # SPACE -> save one case
-                    captured_at = _dt.datetime.now(_dt.UTC)
+                if key == " ":  # SPACE -> note + save one case
+                    captured_at = _dt.datetime.now(_dt.UTC)  # stamp at SPACE, before the note pause
+                    note = _prompt_note(alignment)
                     sidecar = build_arc_case_sidecar(
                         alignment,
                         acfg,
@@ -305,6 +329,7 @@ def main() -> int:
                         frame_w=width,
                         frame_h=height,
                         captured_at=captured_at,
+                        expected_note=note,
                     )
                     if _save_case(out_dir, clean, annotated, sidecar, captured_at):
                         saved += 1

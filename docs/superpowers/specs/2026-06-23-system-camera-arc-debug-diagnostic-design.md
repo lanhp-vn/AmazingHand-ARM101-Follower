@@ -118,7 +118,7 @@ Three files in `--out-dir` (default `media_outputs/arc_debug/`), sharing a milli
 }
 ```
 
-`expected_note` is written **empty** — labeling is **label-later** (SPACE never blocks the loop to prompt for text; a transient failing frame must not be lost to an `input()` freeze). The operator fills it in afterward (e.g. `"both arcs are vividly red to the eye — should read both_red=true"`).
+**REVISION 2026-06-23 (post-bench, operator feedback): `expected_note` is captured at SPACE, not label-later.** SPACE now prompts in the terminal (`input()`) for a short note describing what is wrong with the detector's call, echoing the current verdict (e.g. `note for this case (detector said L:RED R:clr both_red=False) -- Enter to skip:`); the typed string becomes `expected_note`, and Enter-with-no-text leaves it empty. The cv2 window freezes during the prompt — acceptable here: the arm holds grab under torque and the paused frame is exactly the one being described, so there is no transient to lose. (`build_arc_case_sidecar` gained an `expected_note: str = ""` keyword param; the default keeps label-later possible and the original unit test valid.) The original design deferred labeling to avoid an `input()` freeze, but at-capture prompting proved more useful in practice — the operator labels each failing case while it is in front of them.
 
 **Coordinate/band sources.** `screen_roi`, the arc boxes, `red_bands`, `coverage_threshold`, and `morph_kernel` are copied verbatim from the loaded `SystemCameraConfig` (`model_dump` of the relevant sub-models), so each case records the exact config that produced the verdict — essential when comparing cases after a config edit.
 
@@ -137,7 +137,7 @@ uv run python scripts/diagnostics/system_camera/usb_camera_arc_debug.py
 **Keys** (focus the **terminal**, not the window):
 | Key | Action |
 |---|---|
-| `SPACE` | save a case (clean + annotated + sidecar) |
+| `SPACE` | prompt for a note (terminal `input()`), then save a case (clean + annotated + sidecar) |
 | `q` / ESC | quit the loop → arm/hand exit prompt |
 | Ctrl+C | same as `q` (then exit prompt) |
 
@@ -151,9 +151,9 @@ uv run python scripts/diagnostics/system_camera/usb_camera_arc_debug.py
 
 **Host unit test (`tests/unit/test_arc_debug_sidecar.py`, runs in CI):**
 - Loads `build_arc_case_sidecar` from the script via `importlib.util.spec_from_file_location` (see §3 — `scripts/` is not a package).
-- Given a synthetic `AlignmentState` + an `AutoTriggerConfig` + a `RoiBox` screen_roi + camera metadata + a fixed injected timestamp, assert the returned dict has the expected keys, the `detection` block mirrors the `AlignmentState`/threshold, the box/band blocks mirror the config (`model_dump`), and `expected_note == ""`. Pure dict-in/dict-out; no cv2, no I/O.
+- Given a synthetic `AlignmentState` + an `AutoTriggerConfig` + a `RoiBox` screen_roi + camera metadata + a fixed injected timestamp, assert the returned dict has the expected keys, the `detection` block mirrors the `AlignmentState`/threshold, the box/band blocks mirror the config (`model_dump`), and `expected_note == ""` by default. A second case passes `expected_note="..."` and asserts it is stored. Pure dict-in/dict-out; no cv2, no I/O.
 
-**Bench-only (manual, not CI):** the window, the grab staging, SPACE saving the three files, and the arc-box colors tracking a real red/clear screen — verified on hardware, like the other `scripts/diagnostics/system_camera/` tools.
+**Bench-only (manual, not CI):** the window, the grab staging, SPACE prompting for a note then saving the three files (with the note in the sidecar), and the arc-box colors tracking a real red/clear screen — verified on hardware, like the other `scripts/diagnostics/system_camera/` tools.
 
 **Lint/type/format:** `ruff format`, `ruff check`, `mypy src`, `pytest -m 'not hardware'` all green (CI enforces all four).
 

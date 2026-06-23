@@ -70,4 +70,26 @@ def test_build_arc_case_sidecar_shape():
     assert out["right_arc"] == cfg.right_arc.model_dump()
     assert out["red_bands"] == [b.model_dump() for b in cfg.red_bands]
     assert out["morph_kernel"] == cfg.morph_kernel
-    assert out["expected_note"] == ""
+    assert out["expected_note"] == ""  # default when no note is passed (label-later still possible)
+
+
+def test_build_arc_case_sidecar_records_operator_note():
+    build = _load_builder()
+    alignment = AlignmentState(left_red=False, right_red=False, left_cov=0.001, right_cov=0.002)
+    cfg = AutoTriggerConfig()
+    screen_roi = RoiBox(x=0, y=0, w=10, h=10)
+    ts = dt.datetime(2026, 6, 23, 21, 46, 18, tzinfo=dt.UTC)
+
+    out = build(
+        alignment,
+        cfg,
+        screen_roi,
+        camera_index=1,
+        backend="dshow",
+        frame_w=1600,
+        frame_h=1200,
+        captured_at=ts,
+        expected_note="both arcs are vividly red to the eye but read clear",
+    )
+
+    assert out["expected_note"] == "both arcs are vividly red to the eye but read clear"
