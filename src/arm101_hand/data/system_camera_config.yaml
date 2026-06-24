@@ -21,35 +21,39 @@ fps:                # null -> camera-reported fps (fallback 20)
 # (YUY2 is uncompressed + capped low). _apply_format (preview.py) brackets the size with MJPG so the
 # driver can't silently fall back to YUY2 (which would crush USB-2.0 fps -- see system_camera memory).
 #
-# The LIVE stream (width/height) runs at 1600x1200 (UXGA, 4:3) -- used by the preview, recording, AND
-# arc detection everywhere. Chosen for FRAME RATE: on this cam 1600x1200 is the largest 4:3 MJPG mode
-# before a hard USB-2.0 bandwidth cliff (<=1600x1200 ~44 fps; 2048x1536+ drops to ~15 fps -- enumerate
-# with scripts/diagnostics/system_camera/usb_camera_modes.py). The fixed ROI is ~30.6% of the frame, so
-# at this size it crops to ~490x368 REAL pixels and UPSCALES ~1.3x to the 640x480 ROI reference (roi.py)
-# -- a deliberate trade of the no-upscale goal for ~3x the frame rate; still ~6x the detail of the old
-# 640x480 stream. The preview window, recording, and detection frame all stay 640x480 (the ROI ref).
-# For max detail instead (no upscale, ~794x595 crop) use 2592x1944 @ ~15 fps. usb_camera_capture saves
-# this same stream frame on SPACE (no full-res reopen); the demos never save a USB-cam still. Set
-# width/height to null to request the driver's max instead.
+# The LIVE stream (width/height) runs at 2560x1440 (QHD, 16:9) -- used by the preview, recording, AND
+# arc detection everywhere. This cam has two USB-2.0 MJPG bandwidth tiers (enumerate with
+# scripts/diagnostics/system_camera/usb_camera_modes.py): the small 4:3 modes (<=1600x1200) hold ~44 fps,
+# the 4:3 hi-res modes (2048x1536 / 2592x1944 / 4000x3000) collapse to ~15 fps, but the 16:9 lane
+# (1280x720 / 1920x1080 / 2560x1440 / 3840x2160) holds ~29 fps. 2560x1440 is the most detail available
+# at that ~29 fps tier -- ~1.9x the pixels of the old 1600x1200 stream for a 44->29 fps trade, and it
+# clears the ~15 fps 4:3 hi-res cliff entirely. The fixed ROI crops just the Aurora screen and resizes
+# to its calibration reference (screen_roi ref_w x ref_h), so the preview/recording/detection frame
+# size is unchanged.
+# IMPORTANT -- this is a resolution AND aspect-ratio change (4:3 -> 16:9): the Aurora screen lands at a
+# new place/scale in the frame (and 16:9 on this 4:3 sensor may crop the vertical FOV), so the existing
+# screen_roi + arc bands no longer track it. Re-run scripts/calibration/system_camera/calibrate_view.py
+# to re-derive screen_roi + the arc bands before relying on the ROI zoom or the AUTO trigger.
+# Set width/height to null to request the driver's max (4000x3000 @ ~15 fps) instead.
 fourcc: MJPG
-width: 1600         # live stream @ UXGA 4:3 -> ROI crop ~490x368 real px -> ~1.3x upscale to 640x480 ref
-height: 1200
+width: 2560         # live stream @ QHD 16:9 (~29 fps); re-run calibrate_view.py after this aspect change
+height: 1440
 # Screen ROI -- the crop that zooms the preview/recording/detection onto just the Aurora screen.
 # Re-derived by scripts/calibration/system_camera/calibrate_view.py; ref_w/ref_h = the resolution it
 # was calibrated at, so the runtime rescale is identity. Default below = the legacy AURORA_SCREEN_ROI
 # (640x480 ref). Run the calibration after any resolution OR lighting change.
-screen_roi: {x: 107, y: 88, w: 201, h: 97, ref_w: 800, ref_h: 480, angle: 
-    -1.0708245038986206}
+screen_roi: {x: 99, y: 42, w: 209, h: 134, ref_w: 800, ref_h: 480, angle: -1.0}
 # --- Automated trigger (grab_auto_trigger_analysis.py) -------------------------------------------
 # Red-only: each arc is RED (>= coverage_threshold) or not; a capture fires after BOTH arcs go RED
 # (misaligned) then BOTH go not-red (aligned), held stable_seconds. Regions/bands are STARTING
 # ESTIMATES -- re-derive with scripts/calibration/system_camera/calibrate_view.py.
 auto_trigger:
-  left_arc: {x: 147, y: 75, w: 90, h: 317, ref_w: 800, ref_h: 480, angle: 0.0}
-  right_arc: {x: 581, y: 75, w: 90, h: 317, ref_w: 800, ref_h: 480, angle: 0.0}
+  left_arc: {x: 138, y: 88, w: 77, h: 315, ref_w: 800, ref_h: 480, angle: 0.0}
+  right_arc: {x: 594, y: 90, w: 74, h: 312, ref_w: 800, ref_h: 480, angle: 0.0}
   red_bands:                       # red wraps hue 0/180 -> two bands OR'd (pale arcs -> low S/V floors)
-  - {h_lo: 160, s_lo: 42, v_lo: 80, h_hi: 180, s_hi: 255, v_hi: 255}
-  coverage_threshold: 0.0336       # an arc counts as RED at >= this fraction
+  - {h_lo: 0, s_lo: 15, v_lo: 30, h_hi: 11, s_hi: 255, v_hi: 255}
+  - {h_lo: 160, s_lo: 15, v_lo: 30, h_hi: 180, s_hi: 255, v_hi: 255}
+  coverage_threshold: 0.005        # an arc counts as RED at >= this fraction
   morph_kernel: 3                  # MORPH_OPEN kernel (px) to despeckle the mask
   stable_seconds: 1.0              # both arcs must hold not-red this long before firing
   cooldown_seconds: 3.0            # min gap after a fire

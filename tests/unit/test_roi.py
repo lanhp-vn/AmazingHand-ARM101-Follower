@@ -41,10 +41,10 @@ def test_crop_shape_matches_for_frame():
 
 
 def test_aurora_roi_at_1600x1200():
-    # The operating stream is 1600x1200 (system_camera_config.yaml), chosen for ~44 fps over USB 2.0.
-    # At this size the ROI crop (~490x368) is SMALLER than the 640x480 reference, so resize-to-
-    # reference is a mild (~1.3x) UPSCALE -- a deliberate trade of the no-upscale goal for frame rate.
-    # Locks the for_frame numbers the config relies on.
+    # 1600x1200 was the legacy 4:3 operating stream (the live config is now 2560x1440 / 16:9,
+    # screen_roi-driven); this locks the for_frame rescale of the fallback AURORA_SCREEN_ROI at a
+    # representative 4:3 frame. At this size the ROI crop (~490x368) is SMALLER than the 640x480
+    # reference, so resize-to-reference is a mild (~1.3x) UPSCALE rather than a downscale.
     x, y, w, h = AURORA_SCREEN_ROI.for_frame(1600, 1200)
     assert (x, y, w, h) == (150, 188, 490, 368)
     assert w < AURORA_SCREEN_ROI.ref_w and h < AURORA_SCREEN_ROI.ref_h  # mild upscale (fps trade)

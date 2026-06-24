@@ -16,7 +16,7 @@ Two windows open (both letterboxed, never stretched on resize):
 
 Press SPACE to save the framed shot: the ROI zoom (640x480) plus the native-resolution ROI crop
 taken straight from the live frame (the ROI region at the camera's configured stream resolution --
-e.g. ~490x368 at a 1600x1200 stream), as sharp as the operating path gets, with no device reopen and
+e.g. at the 2560x1440 stream), as sharp as the operating path gets, with no device reopen and
 no preview freeze. Both files share a timestamp; the ``<w>x<h>`` suffix tells them apart.
 
 Single-threaded by design (like ``usb_camera_capture.py``): this tool reads + shows frames itself

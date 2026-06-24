@@ -2,7 +2,7 @@
 
 Opens a live cv2 preview of the USB camera that films the Optomed Aurora's screen so you can
 frame the shot. Each SPACE saves the current live frame at the camera's configured stream
-resolution (``width``x``height`` from ``system_camera_config.yaml`` -- 1600x1200 on the IFWATER
+resolution (``width``x``height`` from ``system_camera_config.yaml`` -- 2560x1440 on the IFWATER
 cam) to ``--out-dir``. The preview keeps streaming the whole time; there is no full-resolution
 reopen. NOT the Aurora *fundus* camera (patient retinal images -- that is
 ``arm101_hand.fundus_camera``); this is the host webcam in ``arm101_hand.system_camera``.
