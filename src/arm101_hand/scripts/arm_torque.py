@@ -16,7 +16,12 @@ import sys
 from pydantic import ValidationError
 
 from arm101_hand.config import load_arm_config
-from arm101_hand.scripts.device_setup import ARM_CONFIG_PATH, build_follower
+from arm101_hand.scripts.device_setup import (
+    ARM_CONFIG_PATH,
+    build_follower,
+    gentle_velocity,
+    safe_enable_torque,
+)
 
 
 def main() -> int:
@@ -30,6 +35,7 @@ def main() -> int:
         return 1
 
     follower = build_follower(cfg, use_degrees=True)
+    vel = gentle_velocity(cfg)
     motor_ids = [m.id for m in follower.bus.motors.values()]
 
     print(f"Opening arm bus on {cfg.connection.port} ...")
@@ -42,7 +48,10 @@ def main() -> int:
                 print()  # newline after ^C / EOF
                 break
             if choice == "e":
-                follower.bus.enable_torque()
+                # No-jump torque-on: seed goal<-present + cap velocity first, so enabling torque
+                # holds the arm where it currently is rather than snapping to a stale goal at max
+                # speed (the power-up lunge). Re-enabling after a hand-reposition holds the new pose.
+                safe_enable_torque(follower, vel)
                 print(f"Torque ENABLED on motors {motor_ids}.")
             elif choice == "d":
                 follower.bus.disable_torque()

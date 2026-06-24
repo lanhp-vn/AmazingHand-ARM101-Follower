@@ -32,11 +32,25 @@ def write_hand_servos(
 ) -> None:
     """Command every servo to its wire-radians goal at ``speed`` (no wait).
 
-    Order mirrors the bench-proven sequence: torque on (optional) -> goal speed -> goal
-    position, each goal write spaced by ``SERVO_SYNC_S`` for clean bus arbitration. An
-    empty ``targets`` is a no-op. The caller owns torque-off.
+    When enabling torque, first seed each goal to its PRESENT position and cap goal speed,
+    THEN enable torque, THEN drive to ``targets`` at ``speed`` -- each goal write spaced by
+    ``SERVO_SYNC_S`` for clean bus arbitration. An empty ``targets`` is a no-op. The caller
+    owns torque-off.
+
+    No-jump rationale: on a freshly-powered SCS0009 the SRAM ``goal_speed`` defaults to 0,
+    which means *maximum* speed in position mode (not "stop"), and ``goal_position`` is stale,
+    so enabling torque *before* setting them snaps the servo to a stale goal at full speed --
+    the violent first-run-after-power-up move (SRAM resets every power-cycle, so only the first
+    run(s) after plugging in are affected). Seeding goal<-present + a speed cap before torque-on
+    makes torque-on hold the current pose gently. Mirrors the arm's ``safe_enable_torque``.
     """
     if enable_torque:
+        # Seed goal<-present and cap speed BEFORE torque-on, so enabling torque holds the
+        # current pose gently instead of snapping to a stale goal at max speed.
+        for sid in sorted(targets):
+            controller.write_goal_speed(sid, speed)
+            controller.write_goal_position(sid, _scalar(controller.read_present_position(sid)))
+            time.sleep(SERVO_SYNC_S)
         for sid in sorted(targets):
             controller.write_torque_enable(sid, 1)
     for sid in sorted(targets):

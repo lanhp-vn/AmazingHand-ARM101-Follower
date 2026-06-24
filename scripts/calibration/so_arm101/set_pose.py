@@ -32,6 +32,7 @@ from _common import (
     gentle_velocity,
     load_arm_app_config,
     load_home_degrees,
+    safe_enable_torque,
 )
 
 from arm101_hand.config import load_arm_config
@@ -94,9 +95,10 @@ def main() -> int:
             print(f"ERROR: could not open {cfg.connection.port}: {e}", file=sys.stderr)
             return 1
         follower.bus.write_calibration(follower.calibration)
-        # STS3215 movement-speed register is "Goal_Velocity" (reg 46), not "Profile_Velocity".
-        follower.bus.sync_write("Goal_Velocity", dict.fromkeys(ARM_JOINTS, vel))
-        follower.bus.enable_torque()
+        # No-jump torque-on: seed goal<-present + cap Goal_Velocity (reg 46) before enabling
+        # torque, so a cold-booted bus holds the present pose instead of snapping to a stale
+        # goal at max speed; send_action then drives to the target at the capped speed.
+        safe_enable_torque(follower, vel)
         torque_on = True
         follower.send_action({f"{j}.pos": v for j, v in targets.items()})
         time.sleep(settle_s)

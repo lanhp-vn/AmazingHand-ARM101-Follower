@@ -41,6 +41,21 @@ def test_write_hand_servos_writes_torque_speed_goal():
     assert goals == {1: 0.5, 2: -0.5}
 
 
+def test_write_hand_servos_seeds_present_and_speed_before_torque():
+    c = _FakeController()
+    c.present = {1: 0.9}  # stale present the servo must HOLD when torque turns on, not snap away
+    write_hand_servos(c, {1: 0.1}, speed=3)
+
+    torque_idx = next(i for i, call in enumerate(c.calls) if call[0] == "torque")
+    pre = c.calls[:torque_idx]
+    # Before torque-on: goal seeded to present AND speed capped, so enabling torque holds
+    # the current pose gently instead of snapping to a stale goal at max speed (power-up lunge).
+    assert ("goal", 1, 0.9) in pre, "goal seeded to present before torque-on"
+    assert any(call[0] == "speed" and call[1] == 1 for call in pre), "speed capped before torque-on"
+    # The real target is still commanded after torque is on.
+    assert ("goal", 1, 0.1) in c.calls[torque_idx:]
+
+
 def test_write_hand_servos_can_skip_torque():
     c = _FakeController()
     write_hand_servos(c, {1: 0.1}, speed=3, enable_torque=False)

@@ -35,13 +35,13 @@ AmazingHand-ARM101-Follower/
 ├── .python-version            # 3.12
 ├── src/arm101_hand/
 │   ├── robots/                # device layer — SO-ARM101 subclass
-│   ├── hand/                  # device layer — rustypot kinematics + motion (position-poll) helpers, finger_io (shared finger read/drive), pose-jog/range-calib + index_toggle/index_trigger state machines, named-pose resolver
+│   ├── hand/                  # device layer — rustypot kinematics + motion (position-poll + no-jump torque-on) helpers, finger_io (shared finger read/drive), pose-jog/range-calib + index_toggle/index_trigger state machines, named-pose resolver
 │   ├── fundus_camera/         # device layer — Optomed Aurora: read-only Pictor Wi-Fi client (discovery + file pull) + pure protocol (patient retinal images)
 │   ├── system_camera/         # device layer — arm-mounted USB observation cam (films the Aurora screen): cv2 live preview + record + last-capture still popup; config-driven deskewed 5:3 (800x480) ROI zoom (roi.py + roi_from_region; screen_roi carries a rotation angle, lives in system_camera_config.yaml) + imshow_fit aspect-preserving letterbox; manual-focus lock (focus.py probe core + open_capture autofocus/focus, dshow-only); arc auto-trigger (arc_detector = red-only alignment-arc classification, auto_trigger = pure red->not-red gated lifecycle; WebcamPreview latest_frame snapshot + status overlay); view-calibration math (calibration.py = 5:3 deskew crop + red-band sampling + describe_case/pick_threshold/sweep_red_detection red-detection auto-sweep + ruamel round-trip writer)
 │   ├── fundus_analysis/       # device layer — DR-grading inference: preprocess (circle-crop + eval transform), model (timm ViT-L/16 loader), grader (DRGrader load-once + GradeResult), render (combined results-panel + image codec), sidecar (shared sidecar/sha8 helpers). Local/offline only
 │   ├── config/                # primitive layer — pydantic schemas (arm_config, hand_config, fundus_config, system_camera_config, fundus_analysis_config, calibration, motor_ids)
 │   ├── data/                  # runtime operator config: arm_config.yaml + hand_config.yaml + fundus_config.yaml + system_camera_config.yaml + fundus_analysis_config.yaml (+ README)
-│   └── scripts/               # application layer — console-script entries (incl. dr_grade) + shared device_setup/grab_common
+│   └── scripts/               # application layer — console-script entries (incl. dr_grade) + shared device_setup (incl. safe_enable_torque no-jump torque-on) + grab_common
 ├── scripts/
 │   ├── calibration/
 │   │   ├── amazing_hand/      # snake_case calibration/test/jog scripts + measurement-only YAML (v3 schema)
@@ -149,6 +149,7 @@ uv run pytest -m 'not hardware'           # host unit tests (no bus)
 - **Don't modify `references/**`** — IL-2. Adapt by transferring into `src/` or `scripts/`.
 - **Don't share power rails between hand and arm** — IL-1. Two PSUs, two cables, labeled.
 - **Don't run `lerobot-calibrate` directly for the follower** — it doesn't know `so101_follower_no_gripper`. Use `arm101-calibrate-follower`.
+- **Don't enable arm/hand torque with a bare `enable_torque()` on a cold-booted bus** — a freshly-powered STS3215/SCS0009 has `Goal_Velocity`/`goal_speed` = 0 (= MAX speed in position mode, not "stop") and a stale goal, so torque-on lunges to it at full speed. Use `safe_enable_torque` (arm) / `write_hand_servos` (hand): they seed `Goal_Position <- Present_Position` + cap speed first. SRAM resets every power-cycle, so it only bites the first run(s) after plugging in.
 - **Don't open a COM port from two processes** — IL-4. Close other holders first.
 - **Don't hand-edit calibration YAML/JSON while a controller is connected** — IL-5. Re-run the calibration script.
 - **Don't use `yaml.load()`** — `yaml.safe_load()` only.

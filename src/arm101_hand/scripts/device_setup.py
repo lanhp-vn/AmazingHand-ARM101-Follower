@@ -75,6 +75,27 @@ def load_home_degrees() -> dict[str, float]:
     return dict.fromkeys(ARM_JOINTS, 0.0)
 
 
+def safe_enable_torque(follower, vel: int) -> None:
+    """Enable arm torque WITHOUT the power-up lunge: seed Goal_Position<-Present + cap Goal_Velocity first.
+
+    On a freshly-powered STS3215 the SRAM ``Goal_Velocity`` register defaults to 0, which in
+    position mode means *maximum* speed (not "stop"), and ``Goal_Position`` holds a stale value.
+    A bare ``enable_torque()`` therefore snaps every joint to that stale goal at full speed -- the
+    violent first-run-after-power-up move. SRAM resets on every power-cycle, which is why only the
+    first run(s) right after plugging in are affected (later runs in the same power session inherit
+    the gentle values left in RAM). Seeding ``Goal_Position <- Present_Position`` and writing a
+    ``vel`` cap to ``Goal_Velocity`` *before* enabling torque makes torque-on simply HOLD the
+    current pose gently. Both writes happen with torque off, so nothing moves until ``enable_torque``.
+
+    Mirrors the no-jump pattern already used by jog.py (``_hold_at``) and capture_pose.py; lerobot's
+    own ``enable_torque`` does neither (writes only Torque_Enable + Lock), so we add it here (IL-2).
+    """
+    present = follower.bus.sync_read("Present_Position", normalize=False)
+    follower.bus.sync_write("Goal_Velocity", dict.fromkeys(present, vel))
+    follower.bus.sync_write("Goal_Position", present, normalize=False)
+    follower.bus.enable_torque()
+
+
 def drive_arm_joints(
     follower,
     targets_deg: dict[str, float],

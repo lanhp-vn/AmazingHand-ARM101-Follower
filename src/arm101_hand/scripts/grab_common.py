@@ -70,6 +70,7 @@ from arm101_hand.scripts.device_setup import (
     gentle_velocity,
     load_arm_app_config,
     load_home_degrees,
+    safe_enable_torque,
 )
 
 # src/arm101_hand/scripts/grab_common.py -> repo root is parents[3].
@@ -212,7 +213,9 @@ def run_grab_demo(on_hold: Callable[[GrabHoldContext], None] | None = None) -> i
             print(f"ERROR: could not open arm port {cfg.connection.port}: {e}", file=sys.stderr)
             return 1
         follower.bus.write_calibration(follower.calibration)
-        follower.bus.enable_torque()
+        # No-jump torque-on: seed goal<-present + cap velocity first (else a cold-booted bus
+        # snaps to a stale goal at max speed -- the power-up lunge). See safe_enable_torque.
+        safe_enable_torque(follower, vel)
         arm_torque_on = True
 
         # ---- Forward grab, staged ----

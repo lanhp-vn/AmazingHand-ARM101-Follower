@@ -43,6 +43,9 @@ class _FakeBus:
     def disable_torque(self):
         self.writes.append(("disable_torque", {}, None))
 
+    def enable_torque(self):
+        self.writes.append(("enable_torque", {}, None))
+
 
 class _FakeFollower:
     def __init__(self, calibration, bus, is_connected=True):
@@ -71,6 +74,29 @@ def test_drive_arm_joints_writes_only_subset_and_converts_degrees():
     assert values["shoulder_pan"] == 3071
     vel_writes = [w for w in bus.writes if w[0] == "Goal_Velocity"]
     assert vel_writes and set(vel_writes[0][1]) == {"shoulder_pan"}, "velocity scoped to subset"
+
+
+def test_safe_enable_torque_seeds_present_and_caps_velocity_before_enable():
+    # Stale present pose the joints must HOLD (not snap away from) when torque turns on.
+    present = dict.fromkeys(device_setup.ARM_JOINTS, 1234)
+    bus = _FakeBus(present)
+    follower = _FakeFollower(_full_calib(), bus)
+    device_setup.safe_enable_torque(follower, vel=600)
+
+    kinds = [w[0] for w in bus.writes]
+    enable_idx = kinds.index("enable_torque")
+    gp_idx = next(i for i, w in enumerate(bus.writes) if w[0] == "Goal_Position")
+    gv_idx = next(i for i, w in enumerate(bus.writes) if w[0] == "Goal_Velocity")
+    # Both the goal seed and the velocity cap must land BEFORE torque is enabled,
+    # else enabling torque snaps to a stale goal at unlimited speed (the power-up lunge).
+    assert gp_idx < enable_idx, "Goal_Position must be seeded before enable_torque"
+    assert gv_idx < enable_idx, "Goal_Velocity cap must be set before enable_torque"
+
+    _reg, gp_vals, gp_norm = bus.writes[gp_idx]
+    assert gp_vals == present, "goal seeded to the present pose (no-jump hold)"
+    assert gp_norm is False, "raw encoder steps (works in any norm mode)"
+    _reg, gv_vals, _norm = bus.writes[gv_idx]
+    assert gv_vals == dict.fromkeys(device_setup.ARM_JOINTS, 600), "velocity capped on all joints"
 
 
 def test_drive_arm_joints_empty_is_noop():

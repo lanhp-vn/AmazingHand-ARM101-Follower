@@ -23,6 +23,7 @@ from arm101_hand.scripts.device_setup import (
     gentle_velocity,
     load_arm_app_config,
     load_home_degrees,
+    safe_enable_torque,
 )
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     "load_arm_app_config",
     "load_home_degrees",
     "confirm_and_release",
+    "safe_enable_torque",
 ]

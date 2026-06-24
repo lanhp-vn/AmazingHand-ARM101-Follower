@@ -34,6 +34,7 @@ from _common import (
     gentle_velocity,
     load_arm_app_config,
     load_home_degrees,
+    safe_enable_torque,
 )
 
 from arm101_hand.robots.calibration_summary import ARM_JOINTS
@@ -90,11 +91,10 @@ def main() -> int:
             return 1
         # Align the motors' onboard frame with the on-file calibration (writes motors, not JSON).
         follower.bus.write_calibration(follower.calibration)
-        # Gentle speed BEFORE enabling torque / first move, so nothing snaps.
-        # STS3215 movement-speed register is "Goal_Velocity" (reg 46), not the
-        # Dynamixel-style "Profile_Velocity".
-        follower.bus.sync_write("Goal_Velocity", dict.fromkeys(ARM_JOINTS, vel))
-        follower.bus.enable_torque()
+        # No-jump torque-on: seed goal<-present + cap Goal_Velocity (reg 46, not the Dynamixel
+        # "Profile_Velocity") BEFORE enabling torque, so a cold-booted bus holds the present pose
+        # instead of snapping to a stale goal at max speed. Centering below then moves gently.
+        safe_enable_torque(follower, vel)
         torque_on = True
 
         print(f"Centering all joints (Goal_Velocity={vel}) ...")
