@@ -9,18 +9,20 @@ Detection is RED-ONLY: each arc is RED (misaligned) or not-red (aligned); no gre
 bright/aligned screen reads greenish overall, so green coverage is unreliable).
 
 Flow:
-  1. WHITE startup screen -> pick 1 of up to 3 deskewed 5:3 ROI candidates (keys 1/2/3), or 'm' to
-     drag one manually (cv2.selectROI, angle 0), or 'r' to recapture. The chosen ROI is a RoiBox at
-     the 800x480 detection reference with a deskew angle.
+  1. WHITE startup screen -> DRAG a box over the screen (mouse), then <- / -> to rotate the 5:3 crop
+     until its edges sit parallel to the (possibly tilted) screen; ENTER confirms, 'r' re-drags, 'q'
+     quits. The chosen ROI is a RoiBox at the 800x480 detection reference carrying that deskew angle.
   2. RED arcs -> deskew-crop the ROI -> sample the RED band from a misaligned arc.
   3. BRIGHT / aligned screen -> deskew-crop -> fit the camera circle -> derive symmetric arc bands +
      validate the bands read not-red on the bright frame; pick the coverage threshold.
   4. CONFIRM screen: two deskewed panels labelled by the REAL arc_detector.detect():
      RED panel (expect both arcs RED) + BRIGHT panel (expect both clear, fitted circle drawn).
-     'y' writes, 'e' re-tune arc boxes (selectROI), 'r' redo, 'q' quit.
+     'y' writes, 'e' re-tune arc boxes (mouse drag), 'r' redo, 'q' quit.
 Like usb_camera_capture.py, ACTION KEYS are read from the TERMINAL (a cv2 window often has no
-keyboard focus when launched from a console); the window only displays. The 'm'/'e' manual drags
-use cv2.selectROI, which you interact with IN the window. Plain opencv-python only (no contrib).
+keyboard focus when launched from a console); the window only displays. The screen-box drag and 'e'
+arc-retune drags are mouse-only in the window (mouse events reach a window without keyboard focus)
+and are accepted/cancelled from the TERMINAL too -- NOT cv2.selectROI, whose key-confirm hangs a
+focusless console window (see _drag_box). Plain opencv-python only (no contrib).
 
 Usage:
   uv run python scripts/calibration/system_camera/calibrate_view.py [--camera N] [--backend auto|dshow]
@@ -51,7 +53,6 @@ from arm101_hand.system_camera.arc_detector import _band_mask, detect, red_cover
 from arm101_hand.system_camera.calibration import (  # noqa: E402
     arc_bands_from_circle,
     deskew_crop,
-    detect_screen_rects,
     fit_camera_circle,
     sample_red_band,
     screen_roi_from_rect,
@@ -64,6 +65,7 @@ _FONT = cv2.FONT_HERSHEY_SIMPLEX
 _DETECT = (800, 480)  # the deskewed 5:3 detection reference (ref_w x ref_h)
 _REF_W, _REF_H = _DETECT
 _MAX_WIN_W, _MAX_WIN_H = 1100, 800  # initial window cap so large frames fit the screen
+_ROTATE_STEP_DEG = 0.5  # <- / -> step in the deskew-rotate preview (auto-repeats on key-hold)
 
 
 def _open_window(title: str, frame_w: int, frame_h: int) -> None:
@@ -81,14 +83,14 @@ def _poll_key() -> str:
     from the CONSOLE instead (via msvcrt) -- this works regardless of which window has OS focus, so
     the operator presses keys in the same terminal they launched from (a cv2 window often does NOT
     get keyboard focus when launched from a console). Mirrors usb_camera_capture.py. Ctrl+C raises
-    KeyboardInterrupt; arrow / function-key prefixes are swallowed.
+    KeyboardInterrupt; Left/Right arrows return the literal tokens "LEFT"/"RIGHT" (used by the
+    deskew-rotate loop); other arrow / function keys are still swallowed.
     """
     if not msvcrt.kbhit():
         return ""
     ch = msvcrt.getwch()
-    if ch in ("\x00", "\xe0"):  # arrow / function-key prefix -> consume the 2nd byte, ignore
-        msvcrt.getwch()
-        return ""
+    if ch in ("\x00", "\xe0"):  # arrow / function-key prefix -> read the scan-code 2nd byte
+        return {"K": "LEFT", "M": "RIGHT"}.get(msvcrt.getwch(), "")  # only the arrows we use
     if ch == "\x03":  # Ctrl+C
         raise KeyboardInterrupt
     return ch
@@ -126,49 +128,148 @@ def _capture_frame(cap, title: str, overlay: RoiBox | None) -> np.ndarray | None
             return None
 
 
-def _pick_roi(white: np.ndarray) -> RoiBox | None:
-    """Show up to 3 deskewed 5:3 ROI candidates; return the chosen RoiBox, or None to recapture.
+def _drag_box(base: np.ndarray, prompt: str) -> tuple[int, int, int, int] | None:
+    """Mouse-drag a rectangle on a window; ACCEPT/CANCEL from the TERMINAL. Returns ``(x, y, w, h)``
+    in ``base`` pixels, or None if cancelled.
 
-    Candidates come from detect_screen_rects -> screen_roi_from_rect (each a RoiBox at the 800x480
-    detection reference carrying a deskew angle). Each candidate's rotated box is drawn on the white
-    frame so the operator sees the tilt. 'm' drags an axis-aligned box manually (angle 0)."""
-    fh, fw = white.shape[:2]
-    rects = detect_screen_rects(white, top_n=3)
-    cands = [screen_roi_from_rect(r, fw, fh) for r in rects]
-    if not cands:  # nothing detected -> offer the whole frame so the operator always has an option
-        cands = [screen_roi_from_rect(((fw / 2, fh / 2), (float(fw), float(fh)), 0.0), fw, fh)]
-    title = "Calib 1/3: pick ROI (press keys in the TERMINAL)"
-    colors = [(0, 255, 0), (0, 200, 255), (255, 180, 0)]
+    Replaces ``cv2.selectROI``, which is unusable in this console-launched flow: ``selectROI`` confirms
+    via SPACE/ENTER/c read through the cv2 window's OWN ``waitKey``, but a console-launched cv2 window
+    usually has no keyboard focus on Windows -- so those keys never arrive, and because ``selectROI``
+    blocks while holding the GIL even Ctrl+C can't break in (it hangs). Here the drag is captured with
+    a mouse callback (mouse events reach the window regardless of focus) and the accept/cancel keys
+    come from the TERMINAL via :func:`_poll_key`, exactly like every other key in this script.
+
+    The frame is shown in a FIXED-size AUTOSIZE window (scaled down to fit the screen, never upscaled)
+    so the mouse->frame mapping is a single uniform scale -- no letterbox padding to invert.
+    """
+    fh, fw = base.shape[:2]
+    scale = min(_MAX_WIN_W / fw, _MAX_WIN_H / fh, 1.0)
+    disp_w, disp_h = max(1, round(fw * scale)), max(1, round(fh * scale))
+    shown = cv2.resize(
+        base, (disp_w, disp_h), interpolation=cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    )
+    win = "Drag the box (mouse) -- accept/cancel in the TERMINAL"
+    st = {"x0": 0, "y0": 0, "x1": 0, "y1": 0, "drag": False, "box": False}
+
+    def _on_mouse(event: int, x: int, y: int, _flags: int, _param: object) -> None:
+        x, y = max(0, min(x, disp_w - 1)), max(0, min(y, disp_h - 1))  # clamp to the shown image
+        if event == cv2.EVENT_LBUTTONDOWN:
+            st.update(x0=x, y0=y, x1=x, y1=y, drag=True, box=True)
+        elif event == cv2.EVENT_MOUSEMOVE and st["drag"]:
+            st.update(x1=x, y1=y)
+        elif event == cv2.EVENT_LBUTTONUP and st["drag"]:
+            st.update(x1=x, y1=y, drag=False)
+
+    cv2.namedWindow(win, cv2.WINDOW_AUTOSIZE)
+    cv2.setMouseCallback(win, _on_mouse)
     print(
-        "\nPick the screen ROI -- focus THIS terminal:\n"
-        "  1 / 2 / 3 = select that numbered candidate box   m = drag one manually (in the window)\n"
-        "  r = recapture   q = quit"
+        f"  {prompt}\n"
+        "  Drag a box with the LEFT mouse button, then in THIS terminal: "
+        "SPACE/ENTER = accept, c = cancel."
+    )
+    try:
+        while True:
+            disp = shown.copy()
+            if st["box"]:
+                cv2.rectangle(disp, (st["x0"], st["y0"]), (st["x1"], st["y1"]), (0, 255, 0), 2)
+            cv2.imshow(win, disp)
+            cv2.waitKey(1)  # render only; action keys come from the terminal
+            key = _poll_key()
+            if key in (" ", "\r", "\n") and st["box"]:
+                x = round(min(st["x0"], st["x1"]) / scale)
+                y = round(min(st["y0"], st["y1"]) / scale)
+                w = round(abs(st["x1"] - st["x0"]) / scale)
+                h = round(abs(st["y1"] - st["y0"]) / scale)
+                if w > 0 and h > 0:
+                    return x, y, w, h
+            elif key in ("c", "C", "q", "Q", "\x1b"):
+                return None
+    finally:
+        cv2.destroyWindow(win)
+
+
+def _option_box_pts(cx: float, cy: float, w: float, h: float, angle: float, fw: int, fh: int) -> np.ndarray:
+    """Polygon (int32 points) of the 5:3 crop box for a screen rect at ``angle``, in frame pixels.
+
+    Draw EXACTLY the box ENTER will commit: screen_roi_from_rect does the 5:3 expansion + ref scaling
+    + edge clamp, so deriving the preview from it (mapped back to the frame, rotated by +angle about
+    its centre) keeps the green preview faithful to the stored/cropped ROI -- one copy of the
+    expansion rule, and a clamp at a frame edge shows in the preview too."""
+    box = screen_roi_from_rect(((cx, cy), (w, h), angle), fw, fh)
+    bx, by, bw, bh = roi_from_region(box).for_frame(fw, fh)
+    center = (bx + bw / 2.0, by + bh / 2.0)
+    return cv2.boxPoints((center, (float(bw), float(bh)), angle)).astype(np.int32)
+
+
+def _pick_roi(white: np.ndarray) -> RoiBox | None:
+    """Drag a box over the Aurora screen, then rotate the 5:3 crop to deskew it. None = recapture.
+
+    Replaces the old auto-detect + 3-angle-preset picker: the operator drags an axis-aligned box
+    (sized to the screen), then nudges the angle with the arrow keys until the 5:3 crop's edges sit
+    parallel to the (possibly tilted) screen. A cancelled drag returns None so main() recaptures the
+    white frame; 'r' in the rotate step re-drags on the same frame (no re-SPACE)."""
+    while True:
+        box = _drag_box(white, "Drag a box over the Aurora screen (then rotate to deskew).")
+        if box is None:
+            return None  # cancelled drag -> main() recaptures the white frame
+        roi = _deskew_preview(white, box)
+        if roi is not None:
+            return roi  # ENTER confirmed
+        # roi is None -> 'r' pressed: loop back and re-drag on the same frame
+
+
+def _deskew_preview(base: np.ndarray, box: tuple[int, int, int, int]) -> RoiBox | None:
+    """Rotate-to-deskew preview for a dragged screen box. Returns the confirmed RoiBox (ENTER), or
+    None to re-drag ('r'); raises KeyboardInterrupt on 'q'.
+
+    Draws the 5:3 crop box (green, the exact region ENTER will store) rotated by a live angle over the
+    white frame; <- / -> nudge the angle by _ROTATE_STEP_DEG. Keys come from the TERMINAL (see
+    _poll_key); the window only displays. The dragged box gives centre + (w, h) at angle 0 --
+    screen_roi_from_rect widens the short side to 5:3, so the green box reads WIDER than a ~16:10
+    screen; "aligned" means parallel edges + centred, not edge-coincident."""
+    fh, fw = base.shape[:2]
+    cx, cy = box[0] + box[2] / 2.0, box[1] + box[3] / 2.0
+    w, h = float(box[2]), float(box[3])
+    angle = 0.0
+    title = "Calib 1/3: rotate to deskew (press keys in the TERMINAL)"
+    print(
+        "\nRotate the 5:3 crop to deskew -- focus THIS terminal:\n"
+        "  <- / -> = rotate 0.5deg   ENTER = confirm   r = re-drag   q = quit"
     )
     _open_window(title, fw, fh)
     while True:
-        disp = white.copy()
-        for i, box in enumerate(cands[:3]):
-            x, y, w, h = roi_from_region(box).for_frame(fw, fh)
-            cx, cy = x + w / 2.0, y + h / 2.0
-            pts = cv2.boxPoints(((cx, cy), (float(w), float(h)), -box.angle)).astype(np.int32)
-            cv2.polylines(disp, [pts], True, colors[i], 2)
-            cv2.putText(disp, str(i + 1), (x + 6, y + 26), _FONT, 0.9, colors[i], 2, cv2.LINE_AA)
+        disp = base.copy()
+        cv2.polylines(disp, [_option_box_pts(cx, cy, w, h, angle, fw, fh)], True, (0, 255, 0), 2)
+        cv2.putText(
+            disp,
+            f"angle={angle:+.1f}deg  [<-/-> rotate  ENTER confirm  r re-drag  q quit]",
+            (12, 28),
+            _FONT,
+            0.6,
+            (0, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            disp,
+            "green = chosen 5:3 crop (rotate until its edges match the screen)",
+            (12, 52),
+            _FONT,
+            0.5,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
         imshow_fit(title, disp)
         cv2.waitKey(20)  # render only; action keys come from the terminal
         key = _poll_key()
-        if key in ("1", "2", "3"):
-            idx = int(key) - 1
-            if idx < len(cands[:3]):
-                cv2.destroyWindow(title)
-                return cands[idx]
-        elif key in ("m", "M"):
-            print("  Drag a box in the window, then ENTER/SPACE to accept (c to cancel).")
-            r = cv2.selectROI(title, white, showCrosshair=True, fromCenter=False)
-            if r[2] > 0 and r[3] > 0:
-                cv2.destroyWindow(title)
-                # manual drag is axis-aligned -> store at the detection ref with angle 0
-                rect = ((r[0] + r[2] / 2.0, r[1] + r[3] / 2.0), (float(r[2]), float(r[3])), 0.0)
-                return screen_roi_from_rect(rect, fw, fh)
+        if key == "LEFT":
+            angle -= _ROTATE_STEP_DEG
+        elif key == "RIGHT":
+            angle += _ROTATE_STEP_DEG
+        elif key in ("\r", "\n"):
+            cv2.destroyWindow(title)
+            return screen_roi_from_rect(((cx, cy), (w, h), angle), fw, fh)
         elif key in ("r", "R"):
             cv2.destroyWindow(title)
             return None
@@ -248,21 +349,17 @@ def _confirm(
 
 
 def _retune(red_ref: np.ndarray, trial: AutoTriggerConfig) -> AutoTriggerConfig:
-    """Drag selectROI to re-set each arc band on the deskewed RED crop. Returns an updated
-    AutoTriggerConfig (geometry override; the sampled red bands + threshold are kept)."""
-    win = "Re-tune: drag LEFT arc, then RIGHT arc (ESC to keep current)"
-    lr = cv2.selectROI(win, red_ref, showCrosshair=True, fromCenter=False)
-    rr = cv2.selectROI(win, red_ref, showCrosshair=True, fromCenter=False)
-    cv2.destroyWindow(win)
+    """Mouse-drag each arc band on the deskewed RED crop (accept/cancel in the TERMINAL, see
+    :func:`_drag_box`). Returns an updated AutoTriggerConfig (geometry override; the sampled red bands
+    + threshold are kept). A cancelled drag keeps that arc's current band. red_ref is the 800x480
+    detection ref, so the dragged pixels are already in ref_w/ref_h space."""
+    lr = _drag_box(red_ref, "Re-tune the LEFT arc band.")
+    rr = _drag_box(red_ref, "Re-tune the RIGHT arc band.")
     upd = trial.model_copy(deep=True)
-    if lr[2] > 0 and lr[3] > 0:
-        upd.left_arc = RoiBox(
-            x=int(lr[0]), y=int(lr[1]), w=int(lr[2]), h=int(lr[3]), ref_w=_REF_W, ref_h=_REF_H
-        )
-    if rr[2] > 0 and rr[3] > 0:
-        upd.right_arc = RoiBox(
-            x=int(rr[0]), y=int(rr[1]), w=int(rr[2]), h=int(rr[3]), ref_w=_REF_W, ref_h=_REF_H
-        )
+    if lr is not None:
+        upd.left_arc = RoiBox(x=lr[0], y=lr[1], w=lr[2], h=lr[3], ref_w=_REF_W, ref_h=_REF_H)
+    if rr is not None:
+        upd.right_arc = RoiBox(x=rr[0], y=rr[1], w=rr[2], h=rr[3], ref_w=_REF_W, ref_h=_REF_H)
     return upd
 
 
@@ -314,6 +411,10 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_system_camera_config(_CONFIG_PATH)
+    configured_res = (
+        f"{cfg.width}x{cfg.height}" if cfg.width and cfg.height else "driver max (width/height=null)"
+    )
+    print(f"Configured stream resolution: {configured_res} (fourcc {cfg.fourcc}).")
     cap = None
     try:
         if args.from_files:
@@ -331,7 +432,10 @@ def main() -> int:
             while screen_roi is None:
                 screen_roi = _pick_roi(white)
                 if screen_roi is None:
-                    print("Recapture not available with --from-files; pick a candidate or 'm'.")
+                    print(
+                        "Recapture not available with --from-files; drag a box then rotate to "
+                        "confirm (Ctrl+C aborts)."
+                    )
         else:
             index = args.camera if args.camera is not None else cfg.camera_index
             backend = args.backend if args.backend is not None else cfg.backend
@@ -351,6 +455,14 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if actual_w > 0 and actual_h > 0:
+                clamped = bool(cfg.width and cfg.height and (actual_w, actual_h) != (cfg.width, cfg.height))
+                print(
+                    f"  Camera negotiated {actual_w}x{actual_h}."
+                    + ("  (driver clamped from the configured size)" if clamped else "")
+                )
             screen_roi = None
             while screen_roi is None:
                 white = _capture_frame(cap, "Calib 1/3: frame the WHITE startup screen, SPACE", None)
