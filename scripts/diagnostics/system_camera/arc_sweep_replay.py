@@ -5,7 +5,7 @@ by ``calibrate_view.py`` (and the ``usb_camera_arc_debug.py`` collector) with NO
 no hand, no camera, no Aurora. Each case is a ``<stem>.json`` sidecar (carrying the operator's
 ``expected`` 'red'/'clear' label + the dragged arc geometry) beside a ``<stem>_clean.png`` (the
 640x480 deskewed ROI the detector runs on). The tool loads every labelled case, rebuilds the
-``ArcCase`` list, runs the sweep, and prints the chosen red HSV band + coverage threshold + per-case
+``ArcCase`` list, runs the sweep, and prints the chosen a* cutoff + coverage threshold + per-case
 outcome -- including the transitional one-arc-blank 'red' frames the sweep excludes from the fit.
 
 Use it to validate a ``calibration.py`` / sweep change against the real collected evidence (e.g. after
@@ -13,7 +13,7 @@ retuning the coverage floor, hue pooling, or ``blank_eps``) WITHOUT re-running t
 By default it only READS the saved cases (under git-ignored ``media_outputs/``) and prints the result.
 
 With ``--write`` it applies a SEPARABLE sweep result to ``system_camera_config.yaml`` -- the swept
-``red_bands`` + ``coverage_threshold`` plus the cases' arc geometry -- through the sanctioned
+``a_star_min`` + ``coverage_threshold`` plus the cases' arc geometry -- through the sanctioned
 ``write_calibration_values`` (atomic, pydantic-validated, writes a ``.bak``; IL-5 -- never a raw hand
 edit), after a printed before/after diff + a ``[y/N]`` confirm. It PRESERVES the current ``screen_roi``
 (the replay cannot re-derive the screen rect from the already-deskewed crops); if you re-positioned the
@@ -46,7 +46,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from arm101_hand.config import load_system_camera_config  # noqa: E402
-from arm101_hand.config.system_camera_config import HsvBand, RoiBox  # noqa: E402
+from arm101_hand.config.system_camera_config import RoiBox  # noqa: E402
 from arm101_hand.system_camera.calibration import (  # noqa: E402
     ArcCase,
     SweepResult,
@@ -109,9 +109,8 @@ def format_sweep_report(result: SweepResult, cases: list[LabeledCase]) -> str:
     lines = [
         f"coverage_threshold = {result.coverage_threshold}",
         f"separable (over fitted set) = {result.separable}",
-        "red_bands:",
+        f"a*_min = {result.a_star_min}",
     ]
-    lines += [f"  hue[{b.h_lo}-{b.h_hi}]  S>={b.s_lo}  V>={b.v_lo}" for b in result.red_bands]
     lines += [
         "",
         f"{ok}/{n_fit} fitted cases correct ({n_excluded} excluded as transitional)",
@@ -130,23 +129,23 @@ def format_sweep_report(result: SweepResult, cases: list[LabeledCase]) -> str:
     return "\n".join(lines)
 
 
-def _bands_str(bands: list[HsvBand]) -> str:
-    """Compact one-line render of a red-band list for the --write before/after diff."""
-    return ", ".join(f"hue[{b.h_lo}-{b.h_hi}] S>={b.s_lo} V>={b.v_lo}" for b in bands)
+def _metric_str(a_star_min: int, coverage_threshold: float) -> str:
+    """Compact one-line render of the a* cutoff + threshold for the --write before/after diff."""
+    return f"a*_min={a_star_min} thr={coverage_threshold}"
 
 
 def build_write_kwargs(
     result: SweepResult, cases: list[LabeledCase], current_screen_roi: RoiBox
 ) -> dict[str, object]:
-    """Assemble the ``write_calibration_values`` kwargs for ``--write``: the swept ``red_bands`` +
-    ``coverage_threshold``, the cases' arc geometry (the band/threshold are valid only for the arcs the
-    sweep ran on, so they travel together), and the CURRENT ``screen_roi`` preserved unchanged (the
+    """Assemble the ``write_calibration_values`` kwargs for ``--write``: the swept ``a_star_min`` +
+    ``coverage_threshold``, the cases' arc geometry (the cutoff/threshold are valid only for the arcs
+    the sweep ran on, so they travel together), and the CURRENT ``screen_roi`` preserved unchanged (the
     replay does not re-derive the screen rect). Pure -- unit-testable."""
     return {
         "screen_roi": current_screen_roi,
         "left_arc": cases[0].left_arc,
         "right_arc": cases[0].right_arc,
-        "red_bands": result.red_bands,
+        "a_star_min": result.a_star_min,
         "coverage_threshold": result.coverage_threshold,
     }
 
@@ -240,8 +239,7 @@ def main() -> int:
     new_left, new_right = cases[0].left_arc, cases[0].right_arc
     print(f"\nWILL WRITE -> {config_path}")
     print(f"  coverage_threshold: {at.coverage_threshold}  ->  {kwargs['coverage_threshold']}")
-    print(f"  red_bands:  {_bands_str(at.red_bands)}")
-    print(f"        ->    {_bands_str(result.red_bands)}")
+    print(f"  a*_min:  {at.a_star_min}  ->  {kwargs['a_star_min']}")
     print(
         f"  left_arc:  {at.left_arc.x},{at.left_arc.y},{at.left_arc.w},{at.left_arc.h}  ->  "
         f"{new_left.x},{new_left.y},{new_left.w},{new_left.h}"

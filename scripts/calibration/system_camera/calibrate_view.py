@@ -15,7 +15,7 @@ Flow (inside run_grab_demo -- the arm+hand stage the grab so the camera views th
   5. Auto-sweep the red HSV band + coverage threshold against both panels (report + best-effort).
   6-7. Confirm: 'y' write, 't' test loop (label frames 1=both-red/2=both-clear -> re-sweep), 'r'
        redo arcs, 'q' quit. Loop until satisfied.
-  8. Write screen_roi + arc boxes + red_bands + threshold to system_camera_config.yaml.
+  8. Write screen_roi + arc boxes + a_star_min + threshold to system_camera_config.yaml.
 Action keys are read from the TERMINAL (the cv2 window often has no keyboard focus from a console).
 
 Usage:
@@ -48,7 +48,7 @@ from arm101_hand.system_camera import (  # noqa: E402
 )
 from arm101_hand.system_camera.arc_detector import (  # noqa: E402
     AlignmentState,
-    _band_mask,
+    arc_redness_mask,
     detect,
 )
 from arm101_hand.system_camera.calibration import (  # noqa: E402
@@ -409,7 +409,7 @@ def _save_calib_case(
         },
         "left_arc": cfg.left_arc.model_dump(),
         "right_arc": cfg.right_arc.model_dump(),
-        "red_bands": [b.model_dump() for b in cfg.red_bands],
+        "a_star_min": cfg.a_star_min,
         "morph_kernel": cfg.morph_kernel,
         "camera": {"index": camera_index, "backend": backend},
     }
@@ -452,8 +452,8 @@ def _confirm(red_ref: np.ndarray, clear_ref: np.ndarray, cfg: AutoTriggerConfig)
         while True:
             panels = []
             for label, frame in (("RED frame", red_ref), ("CLEAR frame", clear_ref)):
-                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-                panel = _tint_mask(frame, _band_mask(hsv, cfg.red_bands), (0, 0, 255))
+                lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                panel = _tint_mask(frame, arc_redness_mask(lab, cfg.a_star_min), (0, 0, 255))
                 for arc in (la, ra):
                     ax, ay, aw, ah = arc.for_frame(_REF_W, _REF_H)
                     cv2.rectangle(panel, (ax, ay), (ax + aw, ay + ah), (255, 255, 0), 1)
@@ -619,7 +619,7 @@ def main() -> int:
                 return AutoTriggerConfig(
                     left_arc=left_arc,
                     right_arc=right_arc,
-                    red_bands=result.red_bands,
+                    a_star_min=result.a_star_min,
                     coverage_threshold=result.coverage_threshold,
                 )
 
@@ -638,7 +638,7 @@ def main() -> int:
                         screen_roi=screen_roi,
                         left_arc=left_arc,
                         right_arc=right_arc,
-                        red_bands=trial.red_bands,
+                        a_star_min=trial.a_star_min,
                         coverage_threshold=trial.coverage_threshold,
                     )
                     print(f"Wrote calibration to {_CONFIG_PATH} (backup: {_CONFIG_PATH.name}.bak).")

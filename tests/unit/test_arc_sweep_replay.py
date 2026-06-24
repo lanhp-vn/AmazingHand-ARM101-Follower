@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from arm101_hand.config import load_system_camera_config
-from arm101_hand.config.system_camera_config import HsvBand, RoiBox
+from arm101_hand.config.system_camera_config import RoiBox
 from arm101_hand.system_camera.calibration import (
     ArcCase,
     SweepResult,
@@ -104,7 +104,7 @@ def test_format_sweep_report_marks_excluded_wrong_and_ok():
         mod.LabeledCase("c2", ArcCase(frame=frame, expected="clear"), _LEFT, _RIGHT),
     ]
     res = SweepResult(
-        red_bands=[HsvBand(h_lo=0, s_lo=15, v_lo=30, h_hi=10, s_hi=255, v_hi=255)],
+        a_star_min=134,
         coverage_threshold=0.0096,
         separable=False,
         unsatisfied=[1],
@@ -124,7 +124,7 @@ def test_build_write_kwargs_preserves_screen_roi_and_uses_case_arcs():
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     cases = [mod.LabeledCase("c0", ArcCase(frame=frame, expected="red"), _LEFT, _RIGHT)]
     res = SweepResult(
-        red_bands=[HsvBand(h_lo=0, s_lo=15, v_lo=30, h_hi=10, s_hi=255, v_hi=255)],
+        a_star_min=134,
         coverage_threshold=0.0096,
         separable=True,
         unsatisfied=[],
@@ -132,9 +132,9 @@ def test_build_write_kwargs_preserves_screen_roi_and_uses_case_arcs():
         excluded_transitional=[],
     )
     kw = mod.build_write_kwargs(res, cases, screen_roi)
-    assert kw["screen_roi"] is screen_roi  # preserved, not re-derived
-    assert kw["left_arc"] == _LEFT and kw["right_arc"] == _RIGHT  # taken from the cases
-    assert kw["red_bands"] == res.red_bands
+    assert kw["screen_roi"] is screen_roi
+    assert kw["left_arc"] == _LEFT and kw["right_arc"] == _RIGHT
+    assert kw["a_star_min"] == res.a_star_min
     assert kw["coverage_threshold"] == 0.0096
 
 
@@ -157,6 +157,7 @@ def test_write_kwargs_round_trip_updates_config(tmp_path):
 
     reloaded = load_system_camera_config(dst)
     assert reloaded.auto_trigger.coverage_threshold == res.coverage_threshold
+    assert reloaded.auto_trigger.a_star_min == res.a_star_min
     assert (reloaded.auto_trigger.left_arc.x, reloaded.auto_trigger.right_arc.x) == (_LEFT.x, _RIGHT.x)
-    assert reloaded.screen_roi == current.screen_roi  # screen_roi preserved unchanged
+    assert reloaded.screen_roi == current.screen_roi
     assert dst.with_suffix(".yaml.bak").exists()

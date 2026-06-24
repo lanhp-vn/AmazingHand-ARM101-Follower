@@ -68,7 +68,7 @@ def test_build_arc_case_sidecar_shape():
     assert out["screen_roi"] == screen_roi.model_dump()
     assert out["left_arc"] == cfg.left_arc.model_dump()
     assert out["right_arc"] == cfg.right_arc.model_dump()
-    assert out["red_bands"] == [b.model_dump() for b in cfg.red_bands]
+    assert out["a_star_min"] == cfg.a_star_min
     assert out["morph_kernel"] == cfg.morph_kernel
     assert out["expected_note"] == ""  # default when no note is passed (label-later still possible)
 

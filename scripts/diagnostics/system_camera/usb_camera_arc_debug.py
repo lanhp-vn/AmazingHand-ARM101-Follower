@@ -4,7 +4,7 @@ Stages the arm + hand into the grab pose (the ONLY pose where the Aurora-screen 
 valid), then shows the live deskewed 4:3 (640x480) screen ROI with the two alignment-arc boxes
 drawn -- each RED when ``arc_detector.detect()`` classifies that arc as RED (misaligned) and GREEN
 when it reads clear -- plus a raw-classification HUD (per-arc coverage vs the threshold). Use it to
-collect frames where the RED/clear classification is WRONG, so ``coverage_threshold`` / ``red_bands``
+collect frames where the RED/clear classification is WRONG, so ``coverage_threshold`` / ``a_star_min``
 / the arc box geometry can be retuned against real evidence.
 
 This is a DIAGNOSTIC, not a demo: it runs the same staged grab as the demos but makes NO Aurora
@@ -24,7 +24,7 @@ in ``--out-dir`` (default ``media_outputs/arc_debug/``, git-ignored):
                                 / calibrate_view.py --from-files.
   * ``arc_<ts>_annotated.png``  the ROI with arc boxes + verdict HUD burned in.
   * ``arc_<ts>.json``           the numbers the detector saw: per-arc coverage + verdict, the
-                                threshold, the red bands, the exact ROI/arc geometry used, camera
+                                threshold, the a* cutoff, the exact ROI/arc geometry used, camera
                                 metadata, and your ``expected_note`` (Enter at the prompt = empty).
 
 The full ``opencv-python`` wheel is required for the window (lerobot's headless build has no HighGUI;
@@ -94,7 +94,7 @@ def build_arc_case_sidecar(
     """Assemble the JSON-serializable sidecar dict for one saved arc-debug case.
 
     Pure (no cv2, no I/O): records what ``detect()`` saw -- per-arc coverage + verdict, the
-    threshold, the red bands, and the exact ROI/arc geometry that produced the classification --
+    threshold, the a* cutoff, and the exact ROI/arc geometry that produced the classification --
     plus camera metadata and the operator's ``expected_note`` (what is actually wrong with the
     detector's call, typed at capture time; empty string if skipped). ``captured_at`` is injected
     (not read from the clock) so the function is deterministic + unit-testable.
@@ -120,7 +120,7 @@ def build_arc_case_sidecar(
         },
         "left_arc": cfg.left_arc.model_dump(),
         "right_arc": cfg.right_arc.model_dump(),
-        "red_bands": [b.model_dump() for b in cfg.red_bands],
+        "a_star_min": cfg.a_star_min,
         "morph_kernel": cfg.morph_kernel,
         "expected_note": expected_note,
     }
