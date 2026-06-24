@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from arm101_hand.config import load_system_camera_config
 from arm101_hand.config.system_camera_config import HsvBand, RoiBox
+from arm101_hand.system_camera import roi_from_region
 from arm101_hand.system_camera.calibration import (
     ArcCase,
     describe_case,
@@ -180,3 +181,67 @@ def test_sweep_red_detection_reports_unsatisfiable_cases():
     assert res.separable is False
     assert res.unsatisfied  # non-empty -> best-effort, reported not silently dropped
     assert isinstance(res.coverage_threshold, float)
+
+
+def _fill_arcs(left, right, hsv_color):
+    """800x480 BGR frame with both arc boxes filled with a given HSV colour."""
+    hsv = np.zeros((480, 800, 3), dtype=np.uint8)
+    for arc in (left, right):
+        hsv[arc.y : arc.y + arc.h, arc.x : arc.x + arc.w] = hsv_color
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
+def test_pooled_red_anchor_widens_hue_across_cases():
+    from arm101_hand.system_camera.calibration import _pooled_red_anchor
+
+    left = RoiBox(x=120, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    right = RoiBox(x=600, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    near0 = _fill_arcs(left, right, (2, 200, 200))  # hue 2
+    near180 = _fill_arcs(left, right, (178, 200, 200))  # hue 178 (wraps to red)
+    # a single near-0 frame anchors only the near-zero band
+    single = sample_red_band(roi_from_region(left).crop(near0))
+    assert len(single) == 1 and single[0].h_lo == 0
+    # pooling a near-0 frame and a near-180 frame yields BOTH wrap bands
+    pooled = _pooled_red_anchor([near0, near180], left, right)
+    assert len(pooled) == 2
+    assert any(b.h_lo == 0 for b in pooled) and any(b.h_hi == 180 for b in pooled)
+
+
+def test_sweep_excludes_transitional_red_case():
+    left = RoiBox(x=120, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    right = RoiBox(x=600, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    red_frame = _roi_with_arcs(left, right, (0, 0, 200))  # both arcs red
+    clear_frame = _roi_with_arcs(left, right, (80, 160, 80))  # both greenish/clear
+    transitional = _roi_with_arcs(left, right, (80, 160, 80))  # start greenish...
+    transitional[left.y : left.y + left.h, left.x : left.x + left.w] = (0, 0, 200)  # ...left arc red only
+    cases = [ArcCase(red_frame, "red"), ArcCase(clear_frame, "clear"), ArcCase(transitional, "red")]
+    res = sweep_red_detection(cases, left, right)
+    assert res.separable is True  # the clean both-red + clear separate
+    assert 2 in res.excluded_transitional  # the one-arc-red 'red' frame is excluded from fitting
+    assert 2 not in res.unsatisfied  # and is not counted as a fit failure
+    from arm101_hand.config.system_camera_config import AutoTriggerConfig
+    from arm101_hand.system_camera.arc_detector import detect
+
+    cfg = AutoTriggerConfig(
+        left_arc=left, right_arc=right, red_bands=res.red_bands, coverage_threshold=res.coverage_threshold
+    )
+    assert detect(red_frame, cfg).both_red and detect(clear_frame, cfg).both_clear
+
+
+def test_sweep_pooled_hue_classifies_two_different_red_hues():
+    left = RoiBox(x=120, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    right = RoiBox(x=600, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    red_a = _fill_arcs(left, right, (2, 200, 200))  # hue 2
+    red_b = _fill_arcs(left, right, (178, 200, 200))  # hue 178 (wraps to red)
+    clear = _roi_with_arcs(left, right, (80, 160, 80))
+    res = sweep_red_detection(
+        [ArcCase(red_a, "red"), ArcCase(red_b, "red"), ArcCase(clear, "clear")], left, right
+    )
+    assert res.separable is True
+    from arm101_hand.config.system_camera_config import AutoTriggerConfig
+    from arm101_hand.system_camera.arc_detector import detect
+
+    cfg = AutoTriggerConfig(
+        left_arc=left, right_arc=right, red_bands=res.red_bands, coverage_threshold=res.coverage_threshold
+    )
+    assert detect(red_a, cfg).both_red and detect(red_b, cfg).both_red and detect(clear, cfg).both_clear

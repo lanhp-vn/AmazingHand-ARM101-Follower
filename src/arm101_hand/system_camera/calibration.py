@@ -88,12 +88,9 @@ def _prior_mask(hsv: np.ndarray, bands: list[HsvBand]) -> np.ndarray:
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
 
 
-def sample_red_band(region_bgr: np.ndarray, *, lo_pct: float = 5, hi_pct: float = 95) -> list[HsvBand]:
-    """Percentile-bracket the red arc pixels into 1-2 bands (0/180 hue wrap). Raises if none match."""
-    hsv = cv2.cvtColor(region_bgr, cv2.COLOR_BGR2HSV)
-    pts = hsv[_prior_mask(hsv, _RED_PRIOR) > 0]
-    if pts.size == 0:
-        raise ValueError("no red pixels to sample in this region")
+def _bands_from_points(pts: np.ndarray, lo_pct: float, hi_pct: float) -> list[HsvBand]:
+    """Percentile-bracket pre-masked HSV points into 1-2 red bands (0/180 hue wrap). Shared by
+    ``sample_red_band`` (single region) and ``_pooled_red_anchor`` (pooled over many frames)."""
     s_lo = int(np.percentile(pts[:, 1], lo_pct))
     v_lo = int(np.percentile(pts[:, 2], lo_pct))
     hue = pts[:, 0]
@@ -113,6 +110,39 @@ def sample_red_band(region_bgr: np.ndarray, *, lo_pct: float = 5, hi_pct: float 
             )
         )
     return bands
+
+
+def sample_red_band(region_bgr: np.ndarray, *, lo_pct: float = 5, hi_pct: float = 95) -> list[HsvBand]:
+    """Percentile-bracket the red arc pixels into 1-2 bands (0/180 hue wrap). Raises if none match."""
+    hsv = cv2.cvtColor(region_bgr, cv2.COLOR_BGR2HSV)
+    pts = hsv[_prior_mask(hsv, _RED_PRIOR) > 0]
+    if pts.size == 0:
+        raise ValueError("no red pixels to sample in this region")
+    return _bands_from_points(pts, lo_pct, hi_pct)
+
+
+def _pooled_red_anchor(
+    red_frames: list[np.ndarray],
+    left_arc: RoiBox,
+    right_arc: RoiBox,
+    *,
+    lo_pct: float = 5,
+    hi_pct: float = 95,
+) -> list[HsvBand]:
+    """Pool ``_RED_PRIOR``-masked pixels across the LEFT+RIGHT arc crops of ALL red cases, then
+    percentile-bracket the pooled hue into 1-2 bands (0/180 wrap). Wider / more robust than anchoring
+    on a single frame -- catches arcs whose hue/saturation drifts frame to frame. Raises ValueError if
+    no red pixels are found across any red case."""
+    chunks: list[np.ndarray] = []
+    for frame in red_frames:
+        for arc in (left_arc, right_arc):
+            hsv = cv2.cvtColor(roi_from_region(arc).crop(frame), cv2.COLOR_BGR2HSV)
+            pts = hsv[_prior_mask(hsv, _RED_PRIOR) > 0]
+            if pts.size:
+                chunks.append(pts)
+    if not chunks:
+        raise ValueError("no red pixels to anchor the hue across the red cases")
+    return _bands_from_points(np.concatenate(chunks), lo_pct, hi_pct)
 
 
 def describe_case(expected: str, det_left: bool, det_right: bool) -> str:
@@ -176,14 +206,16 @@ class ArcCase:
 
 @dataclass(frozen=True)
 class SweepResult:
-    """Best-effort tuned detection: the red bands + threshold, whether every case is satisfied, the
-    indices still misclassified, and the per-case (det_left, det_right) under the chosen config."""
+    """Best-effort tuned detection: the red bands + threshold, whether every FITTED (non-excluded)
+    case is satisfied, the fitted cases still misclassified, the per-case (det_left, det_right), and
+    the 'red' cases excluded from fitting as transitional (one arc read clear)."""
 
     red_bands: list[HsvBand]
     coverage_threshold: float
     separable: bool
     unsatisfied: list[int]
     case_detections: list[tuple[bool, bool]]
+    excluded_transitional: list[int]
 
 
 def sweep_red_detection(
@@ -192,31 +224,36 @@ def sweep_red_detection(
     right_arc: RoiBox,
     *,
     morph_kernel: int = 3,
-    s_floors: Sequence[int] = tuple(range(20, 130, 10)),
+    s_floors: Sequence[int] = tuple(range(15, 130, 5)),
     v_floors: Sequence[int] = tuple(range(30, 150, 10)),
+    floor: float = 0.005,
+    blank_eps: float = 0.008,
 ) -> SweepResult:
     """Tune the red HSV band + coverage threshold against all labelled cases.
 
-    1. Hue anchor: ``sample_red_band`` on the arc crops of the first 'red' case -> fixed hue bounds
-       (+ the 0/180 wrap -> up to two bands).
-    2. Grid over (s_floor, v_floor): build candidate red_bands (anchored hue/s_hi/v_hi, swept floors),
-       compute per-arc coverage for every case via the runtime ``detect`` (same masking + morph),
-       pool red-case vs clear-case coverages, threshold = ``pick_threshold``.
-    3. Score by (#cases with BOTH arcs classified to expected, then separation margin); return the
-       best as a SweepResult with red_bands + threshold + the unsatisfied indices + per-case detections.
+    1. Hue anchor: pool ``_RED_PRIOR`` pixels across the arc crops of EVERY 'red' case
+       (``_pooled_red_anchor``) -> hue bounds spanning the full observed range (+ the 0/180 wrap).
+    2. Grid over (s_floor, v_floor): build candidate red_bands (pooled hue/s_hi/v_hi, swept floors),
+       compute per-arc coverage for every case via the runtime ``detect`` (same masking + morph). A
+       'red' case whose weaker arc is < ``blank_eps`` is TRANSITIONAL (it cannot be a true both-red
+       frame -- the two arcs share a colour) and is excluded from the fit pool. Pool the clean
+       red-case coverages vs clear-case coverages -> threshold = ``pick_threshold(..., floor=floor)``.
+    3. Score by (#clean+clear cases classified to expected, then -#transitional, then margin); return
+       the best as a SweepResult with red_bands + threshold + excluded_transitional + the fitted-case
+       unsatisfied indices + per-case detections.
 
-    Raises ValueError if there is no 'red' case to anchor the hue."""
+    Raises ValueError if there is no 'red' case (or no red pixels) to anchor the hue, or if no
+    candidate band recovers a single clean both-red case."""
     red_cases = [c for c in cases if c.expected == "red"]
     if not red_cases:
         raise ValueError("sweep needs at least one 'red' case to anchor the hue")
-    anchor_frame = red_cases[0].frame
-    try:
-        anchor = sample_red_band(roi_from_region(left_arc).crop(anchor_frame))
-    except ValueError:
-        anchor = sample_red_band(roi_from_region(right_arc).crop(anchor_frame))
+    anchor = _pooled_red_anchor([c.frame for c in red_cases], left_arc, right_arc)
 
-    best_key: tuple[int, float] = (-1, -1.0)
-    best: tuple[list[HsvBand], float, list[tuple[bool, bool]]] | None = None
+    def _transitional(c: ArcCase, lc: float, rc: float) -> bool:
+        return c.expected == "red" and min(lc, rc) < blank_eps
+
+    best_key: tuple[int, int, float] = (-1, -(10**9), -1.0)
+    best: tuple[list[HsvBand], float, list[tuple[float, float]]] | None = None
     for s_floor in s_floors:
         for v_floor in v_floors:
             bands = [
@@ -226,31 +263,49 @@ def sweep_red_detection(
             trial = AutoTriggerConfig(
                 left_arc=left_arc, right_arc=right_arc, red_bands=bands, morph_kernel=morph_kernel
             )
-            covs = []
+            covs: list[tuple[float, float]] = []
             for c in cases:
                 st = detect(c.frame, trial)
                 covs.append((st.left_cov, st.right_cov))
-            red_covs = [v for c, lr in zip(cases, covs, strict=True) if c.expected == "red" for v in lr]
-            clear_covs = [v for c, lr in zip(cases, covs, strict=True) if c.expected != "red" for v in lr]
-            t, _sep = pick_threshold(red_covs, clear_covs)
-            dets = [(lc >= t, rc >= t) for (lc, rc) in covs]
-            correct = sum(
-                dl == (c.expected == "red") and dr == (c.expected == "red")
-                for c, (dl, dr) in zip(cases, dets, strict=True)
-            )
-            allv = red_covs + clear_covs
-            margin = min((abs(v - t) for v in allv), default=0.0)
-            key = (correct, margin)
+            red_pool = [
+                v
+                for c, (lc, rc) in zip(cases, covs, strict=True)
+                if c.expected == "red" and not _transitional(c, lc, rc)
+                for v in (lc, rc)
+            ]
+            clear_pool = [
+                v for c, (lc, rc) in zip(cases, covs, strict=True) if c.expected != "red" for v in (lc, rc)
+            ]
+            if not red_pool:  # this band recovered no clean both-red case -> useless
+                continue
+            t, _sep = pick_threshold(red_pool, clear_pool, floor=floor)
+            clean_correct = 0
+            n_transitional = 0
+            for c, (lc, rc) in zip(cases, covs, strict=True):
+                if _transitional(c, lc, rc):
+                    n_transitional += 1
+                    continue
+                want = c.expected == "red"
+                if (lc >= t) == want and (rc >= t) == want:
+                    clean_correct += 1
+            margin = min((abs(v - t) for v in red_pool + clear_pool), default=0.0)
+            key = (clean_correct, -n_transitional, margin)
             if key > best_key:
                 best_key = key
-                best = (bands, t, dets)
+                best = (bands, t, covs)
 
-    assert best is not None  # the grid is non-empty, so a best is always chosen
-    bands, t, dets = best
+    if best is None:
+        raise ValueError("sweep recovered no clean both-red case; show clearer RED arcs and re-capture")
+    bands, t, covs = best
+    excluded = [
+        i for i, (c, (lc, rc)) in enumerate(zip(cases, covs, strict=True)) if _transitional(c, lc, rc)
+    ]
+    excluded_set = set(excluded)
+    dets = [(lc >= t, rc >= t) for (lc, rc) in covs]
     unsatisfied = [
         i
         for i, (c, (dl, dr)) in enumerate(zip(cases, dets, strict=True))
-        if not (dl == (c.expected == "red") and dr == (c.expected == "red"))
+        if i not in excluded_set and not (dl == (c.expected == "red") and dr == (c.expected == "red"))
     ]
     return SweepResult(
         red_bands=bands,
@@ -258,6 +313,7 @@ def sweep_red_detection(
         separable=not unsatisfied,
         unsatisfied=unsatisfied,
         case_detections=dets,
+        excluded_transitional=excluded,
     )
 
 
