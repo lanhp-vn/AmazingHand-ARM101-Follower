@@ -8,12 +8,16 @@ from pydantic import ValidationError
 from arm101_hand.config import load_system_camera_config
 from arm101_hand.config.system_camera_config import HsvBand, RoiBox
 from arm101_hand.system_camera.calibration import (
+    ArcCase,
     arc_bands_from_circle,
+    describe_case,
     deskew_crop,
     fit_camera_circle,
+    pick_threshold,
     sample_red_band,
     screen_roi_from_rect,
     suggest_coverage_threshold,
+    sweep_red_detection,
     write_calibration_values,
 )
 
@@ -144,3 +148,84 @@ def test_write_calibration_rejects_invalid_without_writing(tmp_path):
             coverage_threshold=0.5,  # VALID: empty bands are the sole cause of rejection here
         )
     assert dst.read_text(encoding="utf-8") == before  # original untouched on failure
+
+
+@pytest.mark.parametrize(
+    "expected, det_left, det_right, want",
+    [
+        ("red", True, True, "both arcs correctly detected as red"),
+        ("red", False, False, "both arcs incorrectly detected as not red"),
+        ("red", True, False, "left arc correctly detected as red; right arc incorrectly detected as not red"),
+        ("red", False, True, "left arc incorrectly detected as not red; right arc correctly detected as red"),
+        ("clear", False, False, "both arcs correctly detected as not red"),
+        ("clear", True, True, "both arcs incorrectly detected as red"),
+        (
+            "clear",
+            True,
+            False,
+            "left arc incorrectly detected as red; right arc correctly detected as not red",
+        ),
+        (
+            "clear",
+            False,
+            True,
+            "left arc correctly detected as not red; right arc incorrectly detected as red",
+        ),
+    ],
+)
+def test_describe_case(expected, det_left, det_right, want):
+    assert describe_case(expected, det_left, det_right) == want
+
+
+def test_pick_threshold_separable_midpoint():
+    t, sep = pick_threshold(red_covs=[0.20, 0.30], clear_covs=[0.00, 0.01])
+    assert sep is True
+    assert abs(t - 0.105) < 1e-9  # midpoint of max(clear)=0.01 and min(red)=0.20
+
+
+def test_pick_threshold_overlap_minimises_misclassification():
+    t, sep = pick_threshold(red_covs=[0.22, 0.30, 0.40], clear_covs=[0.00, 0.05, 0.25])
+    assert sep is False
+    assert abs(t - 0.135) < 1e-9  # min-error cut with the larger margin (between 0.05 and 0.22)
+
+
+def test_pick_threshold_empty_returns_floor():
+    assert pick_threshold([], [0.1]) == (0.02, True)
+    assert pick_threshold([0.1], []) == (0.02, True)
+
+
+def _roi_with_arcs(left, right, color_bgr):
+    img = np.zeros((480, 800, 3), dtype=np.uint8)
+    for arc in (left, right):
+        img[arc.y : arc.y + arc.h, arc.x : arc.x + arc.w] = color_bgr
+    return img
+
+
+def test_sweep_red_detection_separates_red_from_clear():
+    left = RoiBox(x=120, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    right = RoiBox(x=600, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    red_frame = _roi_with_arcs(left, right, (0, 0, 200))  # pure red arcs (HSV hue 0)
+    clear_frame = _roi_with_arcs(left, right, (80, 160, 80))  # greenish, no red
+    res = sweep_red_detection([ArcCase(red_frame, "red"), ArcCase(clear_frame, "clear")], left, right)
+    assert res.separable is True
+    assert res.unsatisfied == []
+    assert 0.0 < res.coverage_threshold < 1.0
+    from arm101_hand.config.system_camera_config import AutoTriggerConfig
+    from arm101_hand.system_camera.arc_detector import detect
+
+    cfg = AutoTriggerConfig(
+        left_arc=left, right_arc=right, red_bands=res.red_bands, coverage_threshold=res.coverage_threshold
+    )
+    assert detect(red_frame, cfg).both_red
+    assert detect(clear_frame, cfg).both_clear
+
+
+def test_sweep_red_detection_reports_unsatisfiable_cases():
+    left = RoiBox(x=120, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    right = RoiBox(x=600, y=120, w=80, h=240, ref_w=800, ref_h=480)
+    red_frame = _roi_with_arcs(left, right, (0, 0, 200))
+    contradictory_clear = _roi_with_arcs(left, right, (0, 0, 200))  # tagged 'clear' but actually red
+    res = sweep_red_detection([ArcCase(red_frame, "red"), ArcCase(contradictory_clear, "clear")], left, right)
+    assert res.separable is False
+    assert res.unsatisfied  # non-empty -> best-effort, reported not silently dropped
+    assert isinstance(res.coverage_threshold, float)

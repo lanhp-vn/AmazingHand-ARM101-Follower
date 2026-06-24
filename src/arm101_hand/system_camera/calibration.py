@@ -16,6 +16,8 @@ symmetric arc bands, samples the red HSV band, and round-trips the config. Plain
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -24,8 +26,14 @@ import yaml
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
-from arm101_hand.config.system_camera_config import HsvBand, RoiBox, SystemCameraConfig
+from arm101_hand.config.system_camera_config import (
+    AutoTriggerConfig,
+    HsvBand,
+    RoiBox,
+    SystemCameraConfig,
+)
 
+from .arc_detector import detect  # reuse the EXACT runtime coverage path so calibration matches runtime
 from .roi import roi_from_region
 
 _Rect = tuple[tuple[float, float], tuple[float, float], float]
@@ -162,6 +170,152 @@ def suggest_coverage_threshold(
 ) -> float:
     """Midpoint between the red-frame (high) and bright-frame (low) red coverage, floored."""
     return round(max((red_cov_on_red + red_cov_on_bright) / 2.0, floor), 4)
+
+
+def describe_case(expected: str, det_left: bool, det_right: bool) -> str:
+    """Human sentence comparing the on-screen ground truth (`expected` is 'red' or 'clear' and
+    applies to BOTH arcs, which are physically the same colour) against the detector's per-arc
+    output (`det_left`/`det_right` True == detector said RED). Collapses to 'both arcs ...' when the
+    two arcs share a phrase, else 'left arc ...; right arc ...'."""
+    exp_red = expected == "red"
+
+    def phrase(detected_red: bool) -> str:
+        if exp_red and detected_red:
+            return "correctly detected as red"
+        if exp_red and not detected_red:
+            return "incorrectly detected as not red"
+        if not exp_red and not detected_red:
+            return "correctly detected as not red"
+        return "incorrectly detected as red"
+
+    lp, rp = phrase(det_left), phrase(det_right)
+    return f"both arcs {lp}" if lp == rp else f"left arc {lp}; right arc {rp}"
+
+
+def pick_threshold(
+    red_covs: list[float], clear_covs: list[float], *, floor: float = 0.02
+) -> tuple[float, bool]:
+    """Pick a coverage threshold separating red-case coverages (should be >= t) from clear-case
+    coverages (should be < t).
+
+    Separable (max(clear) < min(red)): max-margin midpoint, separable=True. Overlapping: scan
+    candidate cuts (midpoints between adjacent pooled coverages, plus the two outer edges) and return
+    the one minimising misclassified coverages, tie-broken by the larger distance to the nearest
+    coverage (a 1-D two-class separator -- the Otsu/Triangle idea reimplemented for scalar coverages),
+    separable=False. Floored to `floor` so a degenerate all-low set never yields t<=0 (which would
+    call everything RED). Empty inputs -> (floor, True)."""
+    if not red_covs or not clear_covs:
+        return floor, True
+    lo_red, hi_clear = min(red_covs), max(clear_covs)
+    if hi_clear < lo_red:  # cleanly separable -> midpoint, max margin
+        return max((lo_red + hi_clear) / 2.0, floor), True
+    pooled = sorted(set(red_covs + clear_covs))
+    candidates = [(pooled[i] + pooled[i + 1]) / 2.0 for i in range(len(pooled) - 1)]
+    candidates += [max(floor, pooled[0] - 1e-3), pooled[-1] + 1e-3]
+
+    def score(t: float) -> tuple[int, float]:
+        mis = sum(c >= t for c in clear_covs) + sum(c < t for c in red_covs)
+        margin = min(abs(c - t) for c in pooled)
+        return (-mis, margin)
+
+    best_t = max(candidates, key=score)
+    return max(best_t, floor), False
+
+
+@dataclass(frozen=True)
+class ArcCase:
+    """One labelled deskewed-ROI frame. `expected` ('red'|'clear') applies to BOTH arcs (they are
+    physically the same colour); per-arc detector disagreement is a detection error."""
+
+    frame: np.ndarray  # deskewed ROI, ref_w x ref_h, BGR
+    expected: str
+
+
+@dataclass(frozen=True)
+class SweepResult:
+    """Best-effort tuned detection: the red bands + threshold, whether every case is satisfied, the
+    indices still misclassified, and the per-case (det_left, det_right) under the chosen config."""
+
+    red_bands: list[HsvBand]
+    coverage_threshold: float
+    separable: bool
+    unsatisfied: list[int]
+    case_detections: list[tuple[bool, bool]]
+
+
+def sweep_red_detection(
+    cases: list[ArcCase],
+    left_arc: RoiBox,
+    right_arc: RoiBox,
+    *,
+    morph_kernel: int = 3,
+    s_floors: Sequence[int] = tuple(range(20, 130, 10)),
+    v_floors: Sequence[int] = tuple(range(30, 150, 10)),
+) -> SweepResult:
+    """Tune the red HSV band + coverage threshold against all labelled cases.
+
+    1. Hue anchor: ``sample_red_band`` on the arc crops of the first 'red' case -> fixed hue bounds
+       (+ the 0/180 wrap -> up to two bands).
+    2. Grid over (s_floor, v_floor): build candidate red_bands (anchored hue/s_hi/v_hi, swept floors),
+       compute per-arc coverage for every case via the runtime ``detect`` (same masking + morph),
+       pool red-case vs clear-case coverages, threshold = ``pick_threshold``.
+    3. Score by (#cases with BOTH arcs classified to expected, then separation margin); return the
+       best as a SweepResult with red_bands + threshold + the unsatisfied indices + per-case detections.
+
+    Raises ValueError if there is no 'red' case to anchor the hue."""
+    red_cases = [c for c in cases if c.expected == "red"]
+    if not red_cases:
+        raise ValueError("sweep needs at least one 'red' case to anchor the hue")
+    anchor_frame = red_cases[0].frame
+    try:
+        anchor = sample_red_band(roi_from_region(left_arc).crop(anchor_frame))
+    except ValueError:
+        anchor = sample_red_band(roi_from_region(right_arc).crop(anchor_frame))
+
+    best_key: tuple[int, float] = (-1, -1.0)
+    best: tuple[list[HsvBand], float, list[tuple[bool, bool]]] | None = None
+    for s_floor in s_floors:
+        for v_floor in v_floors:
+            bands = [
+                HsvBand(h_lo=b.h_lo, s_lo=s_floor, v_lo=v_floor, h_hi=b.h_hi, s_hi=b.s_hi, v_hi=b.v_hi)
+                for b in anchor
+            ]
+            trial = AutoTriggerConfig(
+                left_arc=left_arc, right_arc=right_arc, red_bands=bands, morph_kernel=morph_kernel
+            )
+            covs = []
+            for c in cases:
+                st = detect(c.frame, trial)
+                covs.append((st.left_cov, st.right_cov))
+            red_covs = [v for c, lr in zip(cases, covs, strict=True) if c.expected == "red" for v in lr]
+            clear_covs = [v for c, lr in zip(cases, covs, strict=True) if c.expected != "red" for v in lr]
+            t, _sep = pick_threshold(red_covs, clear_covs)
+            dets = [(lc >= t, rc >= t) for (lc, rc) in covs]
+            correct = sum(
+                dl == (c.expected == "red") and dr == (c.expected == "red")
+                for c, (dl, dr) in zip(cases, dets, strict=True)
+            )
+            allv = red_covs + clear_covs
+            margin = min((abs(v - t) for v in allv), default=0.0)
+            key = (correct, margin)
+            if key > best_key:
+                best_key = key
+                best = (bands, t, dets)
+
+    assert best is not None  # the grid is non-empty, so a best is always chosen
+    bands, t, dets = best
+    unsatisfied = [
+        i
+        for i, (c, (dl, dr)) in enumerate(zip(cases, dets, strict=True))
+        if not (dl == (c.expected == "red") and dr == (c.expected == "red"))
+    ]
+    return SweepResult(
+        red_bands=bands,
+        coverage_threshold=round(float(t), 4),
+        separable=not unsatisfied,
+        unsatisfied=unsatisfied,
+        case_detections=dets,
+    )
 
 
 def _flow_map(d: dict[str, float]) -> CommentedMap:
